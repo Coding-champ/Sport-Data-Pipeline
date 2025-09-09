@@ -74,7 +74,7 @@ Tests:
 
 Linting:
 
-- follow the repository style; CI checks can be added (see TODO)
+- follow the repository style; pre-commit hooks configured for linting
 
 ## Repository layout
 
