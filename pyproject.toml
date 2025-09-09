@@ -1,0 +1,36 @@
+[project]
+name = "sport-data-pipeline"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "I",   # isort
+  "UP",  # pyupgrade
+]
+ignore = [
+  # add ignores as needed
+]
+exclude = [
+  ".venv",
+  "node_modules",
+  "migrations",
+  "reports",
+  "logs",
+]
+
+[tool.ruff.isort]
+known-first-party = ["src"]

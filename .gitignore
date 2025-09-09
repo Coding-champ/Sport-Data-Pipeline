@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.env
+
+sources/
+
+# Logs
+*.log
+logs/
+reports/
+
+# Node / JS (not used in Python stack; keep ignored if present)
+node_modules/
+package-lock.json
+package.json
+
+# Playwright artifacts
+playwright-report/
+test-results/
+*.png
+*.html
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.windsurf/
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+.ruff_cache
