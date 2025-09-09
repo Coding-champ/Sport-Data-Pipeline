@@ -582,62 +582,6 @@ class CourtsideScraper(BaseScraper):
             )
         return unified
 
-    async def _infinite_scroll(self, page: Page, max_time_ms: int = 60000, idle_rounds: int = 3):
-        """Scrolls the page until no new content loads or time budget is exceeded.
-        idle_rounds: number of consecutive iterations with no growth before stopping.
-        """
-        start_time = time.time()
-        last_height = 0
-        same_height_count = 0
-        scroll_attempts = 0
-
-        self.logger.info(f"Starting infinite scroll (max: {max_time_ms/1000:.1f}s)")
-
-        try:
-            while (
-                time.time() - start_time
-            ) * 1000 < max_time_ms and same_height_count < idle_rounds:
-                scroll_attempts += 1
-
-                # Scroll to bottom with error handling
-                try:
-                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    self.logger.debug(f"Scroll attempt {scroll_attempts}: Scrolled to bottom")
-                except Exception as e:
-                    self.logger.warning(f"Error during scroll attempt {scroll_attempts}: {str(e)}")
-
-                # Wait for content to load with error handling
-                try:
-                    await asyncio.sleep(2)  # Increased delay for slower connections
-                except Exception as e:
-                    self.logger.warning(f"Error during wait: {str(e)}")
-
-                # Get new scroll height with error handling
-                try:
-                    new_height = await page.evaluate("document.body.scrollHeight")
-                    self.logger.debug(
-                        f"Scroll attempt {scroll_attempts}: New height = {new_height}"
-                    )
-
-                    if new_height == last_height:
-                        same_height_count += 1
-                        self.logger.debug(
-                            f"No height change detected ({same_height_count}/{idle_rounds})"
-                        )
-                    else:
-                        same_height_count = 0
-                        last_height = new_height
-                        self.logger.debug("New content detected, continuing scroll")
-
-                except Exception as e:
-                    self.logger.warning(f"Error checking scroll height: {str(e)}")
-                    same_height_count += 1  # Count errors as potential end of content
-
-        except Exception as e:
-            self.logger.error(f"Error in infinite scroll: {str(e)}")
-
-        self.logger.info(f"Finished scrolling after {scroll_attempts} attempts")
-
     async def _extract_fixtures(self, page: Page) -> list[dict]:
         """Extract fixture data from the page with improved error handling and debugging"""
         self.logger.info("Starting enhanced fixture extraction...")

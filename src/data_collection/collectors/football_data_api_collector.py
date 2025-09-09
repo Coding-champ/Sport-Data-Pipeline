@@ -18,7 +18,6 @@ class FootballDataCollector(DataCollector):
         self.api_config = api_config
         self.rate_limiter = RateLimiter(api_config.rate_limit)
         # TODO: Add an async HTTP client (e.g., aiohttp.ClientSession or httpx.AsyncClient) as self.session, and initialize/cleanup lifecycle.
-        # TODO: Add a logger: self.logger = logging.getLogger('collector.football_data')
 
     async def _make_request(self, endpoint: str, params: dict = None) -> dict:
         """Macht einen API Request mit Rate Limiting"""
@@ -33,7 +32,6 @@ class FootballDataCollector(DataCollector):
                 response.raise_for_status()
                 return await response.json()
         except Exception as e:
-            # TODO: self.logger is undefined. Add a logger to the base class or here.
             self.logger.error(f"API request failed: {url} - {e}")
             raise
 

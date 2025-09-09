@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     ]  # default: Premier League (9); can include others e.g. [9, 12, 11]
 
     # Orchestrator Configuration
-    # Configurable scraper routing (addresses TODO in scraping_orchestrator.py)
+    # Configurable scraper routing
     scraper_routing: dict[str, str] = {
         "transfermarkt": "players",  # Use upsert_players service
         "flashscore": "matches",     # Use upsert_matches service  
