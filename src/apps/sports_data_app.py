@@ -11,7 +11,7 @@ from typing import Any
 
 from ..core.config import Settings
 from ..data_collection.collectors import BetfairOddsCollector, FootballDataCollector
-## from ..data_collection.orchestrator import DataCollectionOrchestrator  # Removed: file does not exist
+from ..data_collection.orchestrator import DataCollectionOrchestrator  # Now imports the actual implementation
 from ..data_collection.scrapers.flashscore_scraper import FlashscoreScraper
 from ..data_collection.scrapers.scraping_orchestrator import ScrapingOrchestrator, ScrapingScheduler
 from ..data_collection.scrapers.transfermarkt_scraper import TransfermarktScraper
@@ -26,8 +26,8 @@ class SportsDataApp:
     def __init__(self, settings: Settings = None):
         self.settings = settings or Settings()
         self.db_manager = DatabaseManager()
-        # TODO: CRITICAL: self.data_orchestrator is referenced throughout but never initialized. Re-introduce DataCollectionOrchestrator or refactor callers to use scraping_orchestrator only.
-        # self.data_orchestrator = DataCollectionOrchestrator(self.db_manager, self.settings)  # Disabled: class not defined
+        # Initialize DataCollectionOrchestrator for API-based data collectors
+        self.data_orchestrator = DataCollectionOrchestrator(self.db_manager, self.settings)
         self.scraping_orchestrator = ScrapingOrchestrator(self.db_manager, self.settings)
         self.scraping_scheduler = ScrapingScheduler(self.scraping_orchestrator)
 
@@ -50,7 +50,6 @@ class SportsDataApp:
             await self.db_manager.initialize()
 
             # Collectors registrieren
-            # TODO: If keeping collectors, fix imports and wiring. The current import `from ..data_collection.collectors import BetfairOddsCollector, FootballDataCollector` requires __init__ exports and modules to exist.
             await self._register_collectors()
 
             # Scrapers registrieren
@@ -67,33 +66,32 @@ class SportsDataApp:
     async def _register_collectors(self):
         """Registriert Data Collectors"""
         try:
-            # TODO: This method uses self.data_orchestrator which is not defined. Either:
-            # - Reintroduce a DataCollectionOrchestrator implementation, or
-            # - Remove collectors for now and rely only on web scrapers, or
-            # - Route collectors through scraping_orchestrator if appropriate.
             # Football Data API Collector
-            if self.settings.football_data_api_key:
+            if self.settings.football_data_api_key and self.settings.enable_football_data_collector:
                 football_collector = FootballDataCollector(self.db_manager, self.settings)
                 self.data_orchestrator.register_collector(football_collector)
                 self.logger.info("Registered FootballDataCollector")
 
             # Betfair Odds Collector
-            if self.settings.betfair_app_key:
-                from ..data_collection.collectors.betfair_odds_collector import BetfairConfig  # TODO: Ensure this module exists or guard import.
+            if self.settings.betfair_app_key and self.settings.enable_betfair_collector:
+                try:
+                    from ..data_collection.collectors.betfair_odds_collector import BetfairConfig
+                
+                    betfair_config = BetfairConfig(
+                        app_key=self.settings.betfair_app_key,
+                        username=self.settings.betfair_username,
+                        password=self.settings.betfair_password,
+                        cert_file=self.settings.betfair_cert_file,
+                        key_file=self.settings.betfair_key_file,
+                    )
 
-                betfair_config = BetfairConfig(
-                    app_key=self.settings.betfair_app_key,
-                    username=self.settings.betfair_username,
-                    password=self.settings.betfair_password,
-                    cert_file=self.settings.betfair_cert_file,
-                    key_file=self.settings.betfair_key_file,
-                )
+                    betfair_collector = BetfairOddsCollector(self.db_manager, betfair_config)
+                    self.data_orchestrator.register_collector(betfair_collector)
+                    self.logger.info("Registered BetfairOddsCollector")
+                except ImportError as e:
+                    self.logger.warning(f"BetfairOddsCollector not available: {e}")
 
-                betfair_collector = BetfairOddsCollector(self.db_manager, betfair_config)
-                self.data_orchestrator.register_collector(betfair_collector)
-                self.logger.info("Registered BetfairOddsCollector")
-
-            # Initialisiere alle Collectors
+            # Initialize all registered Collectors
             await self.data_orchestrator.initialize_all()
 
         except Exception as e:
@@ -104,30 +102,40 @@ class SportsDataApp:
         """Registriert Web Scrapers"""
         try:
             # Transfermarkt Scraper
-            transfermarkt_scraper = TransfermarktScraper(self.db_manager, self.settings)
-            self.scraping_orchestrator.register_scraper(transfermarkt_scraper)
+            if self.settings.enable_transfermarkt_scraper:
+                try:
+                    transfermarkt_scraper = TransfermarktScraper(self.db_manager, self.settings)
+                    self.scraping_orchestrator.register_scraper(transfermarkt_scraper)
+                except ImportError as e:
+                    self.logger.warning(f"TransfermarktScraper not available: {e}")
 
             # Flashscore Scraper
-            # TODO: Ensure modules flashscore_scraper and bet365_scraper exist or make registration conditional via settings flags to avoid ImportError at startup.
-            flashscore_scraper = FlashscoreScraper(self.db_manager, self.settings)
-            self.scraping_orchestrator.register_scraper(flashscore_scraper)
+            if self.settings.enable_flashscore_scraper:
+                try:
+                    flashscore_scraper = FlashscoreScraper(self.db_manager, self.settings)
+                    self.scraping_orchestrator.register_scraper(flashscore_scraper)
+                except ImportError as e:
+                    self.logger.warning(f"FlashscoreScraper not available: {e}")
 
-            # Odds Scraper (optional in collection_once)
-            if not (
+            # Bet365 Scraper (optional in collection_once)
+            if self.settings.enable_bet365_scraper and not (
                 self.settings.run_mode == "collection_once"
                 and not getattr(self.settings, "enable_odds_in_collection_once", False)
             ):
-                odds_scraper = Bet365Scraper(self.db_manager, self.settings)
-                self.scraping_orchestrator.register_scraper(odds_scraper)
+                try:
+                    odds_scraper = Bet365Scraper(self.db_manager, self.settings)
+                    self.scraping_orchestrator.register_scraper(odds_scraper)
+                except ImportError as e:
+                    self.logger.warning(f"Bet365Scraper not available: {e}")
             else:
                 self.logger.info(
-                    "Skipping OddsScraper registration for collection_once (disabled by setting)"
+                    "Skipping Bet365Scraper registration (disabled by setting or collection_once mode)"
                 )
 
-            # Initialisiere alle Scrapers
+            # Initialize all registered Scrapers
             await self.scraping_orchestrator.initialize_all()
 
-            self.logger.info("Registered and initialized all scrapers")
+            self.logger.info("Registered and initialized all available scrapers")
 
         except Exception as e:
             self.logger.error(f"Failed to register scrapers: {e}")
@@ -139,11 +147,10 @@ class SportsDataApp:
             self.logger.info("Starting data collection...")
             start_time = datetime.now()
 
-            # TODO: self.data_orchestrator is undefined. Replace with a working implementation or remove this section.
-            # Sammle Daten von API Collectors
+            # Collect data from API Collectors
             collection_results = await self.data_orchestrator.collect_all_data(collectors)
 
-            # Sammle Daten von Scrapers
+            # Collect data from Scrapers
             scraping_results = await self.scraping_orchestrator.run_scraping_job()
 
             duration = (datetime.now() - start_time).total_seconds()
@@ -156,7 +163,7 @@ class SportsDataApp:
                 "timestamp": datetime.now().isoformat(),
             }
 
-            # Metriken aufzeichnen (robust gegen Listen/Dictionaries)
+            # Record metrics (robust against Lists/Dictionaries)
             if self.settings.enable_metrics:
 
                 def iter_result_items(res):
@@ -207,7 +214,6 @@ class SportsDataApp:
             system_metrics = await self.system_monitor.collect_system_metrics()
 
             # Data Collection Status
-            # TODO: self.data_orchestrator is undefined. Decide whether to drop collection stats or provide a new aggregation source.
             collection_stats = await self.data_orchestrator.get_collection_statistics()
 
             # Scraping Status
@@ -231,15 +237,14 @@ class SportsDataApp:
         try:
             self.logger.info("Cleaning up Sports Data App...")
 
-            # Stoppe Scheduler
+            # Stop Scheduler
             self.scraping_scheduler.stop()
 
-            # Räume Orchestrators auf
-            # TODO: self.data_orchestrator is undefined. Ensure a safe guard or conditional cleanup.
+            # Cleanup Orchestrators
             await self.data_orchestrator.cleanup_all()
             await self.scraping_orchestrator.cleanup_all()
 
-            # Schließe Database
+            # Close Database
             if self.db_manager.pool:
                 await self.db_manager.pool.close()
 

@@ -53,6 +53,28 @@ class Settings(BaseSettings):
         9
     ]  # default: Premier League (9); can include others e.g. [9, 12, 11]
 
+    # Orchestrator Configuration
+    # Configurable scraper routing (addresses TODO in scraping_orchestrator.py)
+    scraper_routing: dict[str, str] = {
+        "transfermarkt": "players",  # Use upsert_players service
+        "flashscore": "matches",     # Use upsert_matches service  
+        "odds": "odds",              # Use upsert_odds service
+        "fbref": "generic",          # Use generic scraped_data table
+        "courtside1891": "generic",  # Use generic scraped_data table
+        "bet365": "odds",            # Use upsert_odds service
+    }
+    
+    # Feature flags for optional scrapers (addresses startup ImportError issues)
+    enable_transfermarkt_scraper: bool = True
+    enable_flashscore_scraper: bool = True
+    enable_bet365_scraper: bool = True
+    enable_fbref_scraper: bool = True
+    enable_courtside1891_scraper: bool = False
+    
+    # Feature flags for collectors
+    enable_football_data_collector: bool = True
+    enable_betfair_collector: bool = True
+
     # Analytics
     analytics_enabled: bool = True
     model_update_interval_hours: int = 24
