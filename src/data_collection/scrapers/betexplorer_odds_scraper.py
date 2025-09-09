@@ -5,6 +5,7 @@ import os
 import sys
 import time
 from time import perf_counter
+from typing import Dict, List, Optional, Tuple
 
 from common.http import DEFAULT_UAS, fetch_html
 
@@ -12,11 +13,139 @@ from common.http import DEFAULT_UAS, fetch_html
 # Using shared HTTP utilities from common/http.py. In practice, normalize markets and snapshot odds over time.
 
 
+def parse_odds_tables(html_content: str) -> Dict[str, List[Dict]]:
+    """Parse BetExplorer odds tables for various markets.
+    
+    Args:
+        html_content: HTML content of the BetExplorer page
+        
+    Returns:
+        Dictionary with parsed odds for different markets (1X2, AH, O/U)
+    """
+    from bs4 import BeautifulSoup
+    
+    soup = BeautifulSoup(html_content, 'html.parser')
+    odds_data = {
+        "1x2": [],
+        "asian_handicap": [],
+        "over_under": []
+    }
+    
+    try:
+        # Parse 1X2 odds table
+        x12_table = soup.find('table', {'class': lambda x: x and 'odds-table' in x})
+        if x12_table:
+            for row in x12_table.find_all('tr')[1:]:  # Skip header
+                cells = row.find_all('td')
+                if len(cells) >= 4:  # Bookmaker, 1, X, 2
+                    bookmaker = cells[0].get_text(strip=True)
+                    home_odds = cells[1].get_text(strip=True)
+                    draw_odds = cells[2].get_text(strip=True)
+                    away_odds = cells[3].get_text(strip=True)
+                    
+                    odds_data["1x2"].append({
+                        "bookmaker": bookmaker,
+                        "home": _parse_odds_value(home_odds),
+                        "draw": _parse_odds_value(draw_odds),
+                        "away": _parse_odds_value(away_odds),
+                        "market_type": "1x2"
+                    })
+        
+        # Parse Asian Handicap odds
+        ah_table = soup.find('table', {'id': 'handicap-table'}) or soup.find('div', {'class': 'handicap-odds'})
+        if ah_table:
+            for row in ah_table.find_all('tr')[1:]:
+                cells = row.find_all('td')
+                if len(cells) >= 4:
+                    bookmaker = cells[0].get_text(strip=True)
+                    handicap = cells[1].get_text(strip=True)
+                    home_odds = cells[2].get_text(strip=True)
+                    away_odds = cells[3].get_text(strip=True)
+                    
+                    odds_data["asian_handicap"].append({
+                        "bookmaker": bookmaker,
+                        "handicap": handicap,
+                        "home": _parse_odds_value(home_odds),
+                        "away": _parse_odds_value(away_odds),
+                        "market_type": "asian_handicap"
+                    })
+        
+        # Parse Over/Under odds
+        ou_table = soup.find('table', {'id': 'ou-table'}) or soup.find('div', {'class': 'over-under-odds'})
+        if ou_table:
+            for row in ou_table.find_all('tr')[1:]:
+                cells = row.find_all('td')
+                if len(cells) >= 4:
+                    bookmaker = cells[0].get_text(strip=True)
+                    total = cells[1].get_text(strip=True)
+                    over_odds = cells[2].get_text(strip=True)
+                    under_odds = cells[3].get_text(strip=True)
+                    
+                    odds_data["over_under"].append({
+                        "bookmaker": bookmaker,
+                        "total": total,
+                        "over": _parse_odds_value(over_odds),
+                        "under": _parse_odds_value(under_odds),
+                        "market_type": "over_under"
+                    })
+                    
+    except Exception as e:
+        print(f"Error parsing odds tables: {e}", file=sys.stderr)
+    
+    return odds_data
+
+
+def _parse_odds_value(odds_text: str) -> Optional[float]:
+    """Parse odds value from text, handling various formats."""
+    try:
+        # Remove any extra whitespace and common prefixes/suffixes
+        cleaned = odds_text.strip().replace(',', '.')
+        
+        # Handle different formats: 1.50, 3/2, +150, etc.
+        if '/' in cleaned:
+            # Fractional odds like 3/2
+            parts = cleaned.split('/')
+            if len(parts) == 2:
+                return (float(parts[0]) / float(parts[1])) + 1.0
+        elif cleaned.startswith(('+', '-')):
+            # American odds like +150, -110
+            value = float(cleaned[1:])
+            if cleaned.startswith('+'):
+                return (value / 100) + 1.0
+            else:
+                return (100 / value) + 1.0
+        else:
+            # Decimal odds like 1.50
+            return float(cleaned)
+    except (ValueError, ZeroDivisionError):
+        return None
+    
+    return None
+
+
+def create_odds_snapshot(url: str, odds_data: Dict[str, List[Dict]]) -> Dict:
+    """Create a standardized odds snapshot."""
+    snapshot = {
+        "source": "betexplorer",
+        "url": url,
+        "timestamp": time.time(),
+        "markets": odds_data,
+        "total_bookmakers": len(set(
+            item.get("bookmaker", "") 
+            for market in odds_data.values() 
+            for item in market
+        )),
+        "status": "parsed"
+    }
+    
+    return snapshot
+
+
 def process_one(args):
     if not args.url:
         raise ValueError("Provide --url to a BetExplorer match page or odds page")
     t0 = perf_counter()
-    fetch_html(
+    html_content = fetch_html(
         args.url,
         timeout=args.timeout,
         retries=args.retries,
@@ -36,19 +165,23 @@ def process_one(args):
     dt = perf_counter() - t0
     if args.verbose:
         print(f"Fetched BetExplorer odds page in {dt*1000:.0f} ms -> {args.url}")
-    # TODO: Parse odds tables (1X2, AH, O/U) and snapshot
-    print(
-        json.dumps(
-            {
-                "source": "betexplorer",
-                "collector": "odds",
-                "input": {"url": args.url},
-                "status": "fetched",
-                "message": "placeholder - parse odds tables and normalize",
-            },
-            ensure_ascii=False,
-        )
-    )
+    
+    # Parse odds tables (1X2, AH, O/U) and create snapshot
+    try:
+        odds_data = parse_odds_tables(html_content)
+        snapshot = create_odds_snapshot(args.url, odds_data)
+        
+        print(json.dumps(snapshot, ensure_ascii=False, indent=2 if args.verbose else None))
+        
+    except Exception as e:
+        error_result = {
+            "source": "betexplorer",
+            "collector": "odds",
+            "input": {"url": args.url},
+            "status": "error",
+            "message": f"Failed to parse odds: {str(e)}",
+        }
+        print(json.dumps(error_result, ensure_ascii=False))
 
 
 def main():
