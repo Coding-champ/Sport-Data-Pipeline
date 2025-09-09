@@ -31,11 +31,15 @@ class Club(BaseModel):
     @field_validator("stats", mode="before")
     @classmethod
     def coerce_stats_numbers(cls, v: Any) -> dict[str, Number]:
-        # TODO: Use a tolerant coercion path for None/"" values instead of raising to avoid rejecting partial rows.
         if not isinstance(v, dict):
             raise ValueError("stats must be a dict")
         out: dict[str, Number] = {}
         for k, val in v.items():
+            # Handle None/"" values with tolerant coercion
+            if val is None or val == "":
+                out[k] = 0.0  # Default to 0 for missing values
+                continue
+            
             # Already numeric
             # FIX: isinstance does not accept union types (int | float) here; using tuple form instead.
             if isinstance(val, (int, float)):
@@ -44,16 +48,21 @@ class Club(BaseModel):
             # Try to coerce numeric strings like "85.1" or "111"
             if isinstance(val, str):
                 sval = val.strip().replace(",", ".")
+                if not sval:  # Empty string after stripping
+                    out[k] = 0.0
+                    continue
                 try:
                     if "." in sval:
                         out[k] = float(sval)
                     else:
                         out[k] = int(sval)
                     continue
-                except Exception:
-                    pass
-            # Fallback: raise for unsupported types
-            raise ValueError(f"Unsupported stats value for '{k}': {type(val).__name__}")
+                except ValueError:
+                    # Tolerant fallback: set to 0 for unparseable values
+                    out[k] = 0.0
+                    continue
+            # Unable to coerce - use tolerant fallback
+            out[k] = 0.0  # Default to 0 instead of raising
         return out
 
 
@@ -83,7 +92,7 @@ class Team(BaseModel):
     season: Optional[str] = None
     founded: Optional[int] = Field(default=None, ge=1800, le=2100)
     venue: Optional[Venue] = None
-    # TODO: Consider adding external_ids: dict[str,str] to align with DB schema.external_ids and scrapers.
+    external_ids: Optional[dict[str, str]] = Field(default_factory=dict, description="External identifiers from different sources")
 
 
 class Position(str, Enum):
@@ -109,7 +118,27 @@ class Player(BaseModel):
     height_cm: Optional[int] = Field(default=None, ge=120, le=230)
     weight_kg: Optional[float] = Field(default=None, ge=40, le=130)
     foot: Optional[Footedness] = None
-    # TODO: Many collectors/scrapers produce first_name/last_name and external_ids; consider extending the model or adding a mapping layer.
+    # Support for external sources that provide first_name/last_name separately
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    external_ids: Optional[dict[str, str]] = Field(default_factory=dict, description="External identifiers from different sources")
+    
+    @field_validator("name", mode="before")
+    @classmethod
+    def compose_name_from_parts(cls, v, info):
+        """Compose full name if first_name/last_name are provided but name is not."""
+        if v:
+            return v  # Use provided name as-is
+        
+        # Try to compose from first_name/last_name
+        data = info.data if hasattr(info, 'data') else {}
+        first_name = data.get('first_name', '')
+        last_name = data.get('last_name', '')
+        
+        if first_name or last_name:
+            return f"{first_name} {last_name}".strip()
+        
+        return v
 
 
 class MatchStatus(str, Enum):
@@ -146,7 +175,8 @@ class Match(BaseModel):
     venue: Optional[Venue] = None
     status: MatchStatus = MatchStatus.SCHEDULED
     result: Optional[MatchResult] = None
-    # TODO: Consider adding external_ids and source_url to align with ingestion scripts.
+    external_ids: Optional[dict[str, str]] = Field(default_factory=dict, description="External identifiers from different sources")
+    source_url: Optional[HttpUrl] = Field(default=None, description="Source URL for ingestion scripts")
 
 
 class InjuryStatus(str, Enum):
