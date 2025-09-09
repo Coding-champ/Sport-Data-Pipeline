@@ -102,19 +102,21 @@ class ScrapingOrchestrator:
                 len(data) if data else 0,
             )
             return
-        # Je nach Scraper-Typ in entsprechende Tabelle
-        # TODO: Make this routing configurable (mapping in settings) and support additional scrapers like 'fbref', 'courtside1891'.
-        if scraper_name == "transfermarkt":
+        
+        # Use configurable scraper routing from settings
+        routing_type = self.settings.scraper_routing.get(scraper_name, "generic")
+        
+        if routing_type == "players":
             # Delegate to centralized DB service for players
             await upsert_players(self.db_manager, data)
-        elif scraper_name == "flashscore":
+        elif routing_type == "matches":
             # Delegate to centralized DB service for matches
             await upsert_matches(self.db_manager, data)
-        elif scraper_name == "odds":
+        elif routing_type == "odds":
             # Delegate to centralized DB service for odds
             await upsert_odds(self.db_manager, data)
         else:
-            # Generische Speicherung
+            # Generic storage for new scrapers like 'fbref', 'courtside1891'
             await self._save_generic_data(scraper_name, data)
 
     async def _save_generic_data(self, scraper_name: str, data: list[dict]):
@@ -135,7 +137,7 @@ class ScrapingOrchestrator:
             clean_value = value_str.replace("€", "").replace("$", "").replace(",", "").strip()
 
             # Handle Millionen/Tausend Notationen
-            if "Mio" in clean_value oder "M" in clean_value:  # TODO: Fix typo 'oder' -> 'or' to avoid syntax error if this line is executed.
+            if "Mio" in clean_value or "M" in clean_value:
                 number = float(clean_value.replace("Mio", "").replace("M", "").strip())
                 return number * 1000000
             elif "Tsd" in clean_value or "K" in clean_value:
