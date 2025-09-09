@@ -8,16 +8,42 @@ import asyncio
 import logging
 
 class RateLimiter:
-    """Simple async rate limiter."""
-    def __init__(self, rate_limit: int):
+    """Token bucket rate limiter for API requests."""
+    
+    def __init__(self, rate_limit: int, time_window: float = 1.0):
+        """
+        Initialize rate limiter.
+        
+        Args:
+            rate_limit: Maximum number of requests per time window
+            time_window: Time window in seconds (default 1.0 for per-second limiting)
+        """
         self.rate_limit = rate_limit
-        self._lock = asyncio.Semaphore(rate_limit)
-
+        self.time_window = time_window
+        self.tokens = rate_limit
+        self.last_refill = asyncio.get_event_loop().time()
+        self._lock = asyncio.Lock()
+    
     async def acquire(self):
-        # TODO: This is a concurrency limiter, not a true rate limiter. Replace with a token bucket/leaky bucket to enforce N requests per time window.
-        await self._lock.acquire()
-        await asyncio.sleep(1 / self.rate_limit)
-        self._lock.release()
+        """Acquire a token, waiting if necessary."""
+        async with self._lock:
+            now = asyncio.get_event_loop().time()
+            # Refill tokens based on elapsed time
+            time_passed = now - self.last_refill
+            self.tokens = min(
+                self.rate_limit,
+                self.tokens + time_passed * (self.rate_limit / self.time_window)
+            )
+            self.last_refill = now
+            
+            if self.tokens >= 1:
+                self.tokens -= 1
+                return
+            
+            # Wait until we can get a token
+            wait_time = (1 - self.tokens) * (self.time_window / self.rate_limit)
+            await asyncio.sleep(wait_time)
+            self.tokens = 0  # We'll consume the token we waited for
 
 class DataCollector(ABC):
     """Abstract base class for all data collectors."""
