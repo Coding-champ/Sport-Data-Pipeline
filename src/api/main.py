@@ -61,7 +61,6 @@ def create_fastapi_app(settings, data_app, analytics_app, *, db_manager: Optiona
                     from src.data_collection.scrapers.transfermarkt_scraper import TransfermarktScraper
                     from src.data_collection.scrapers.flashscore_scraper import FlashscoreScraper
                     from src.data_collection.scrapers.bet365_scraper import Bet365Scraper
-                    # TODO: These imports/modules may not exist in this repo snapshot; consider feature flags to guard registration.
                     orchestrator.register_scraper(TransfermarktScraper(data_app.db_manager, settings))
                     orchestrator.register_scraper(FlashscoreScraper(data_app.db_manager, settings))
                     orchestrator.register_scraper(Bet365Scraper(data_app.db_manager, settings))
