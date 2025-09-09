@@ -4,6 +4,8 @@ Sammelt Daten von der Football-data.org API
 """
 
 from datetime import datetime
+import aiohttp
+from typing import Optional
 
 from src.core.config import APIConfig
 from .base import DataCollector, RateLimiter
@@ -17,17 +19,32 @@ class FootballDataCollector(DataCollector):
         super().__init__("football_data", db_manager)
         self.api_config = api_config
         self.rate_limiter = RateLimiter(api_config.rate_limit)
-        # TODO: Add an async HTTP client (e.g., aiohttp.ClientSession or httpx.AsyncClient) as self.session, and initialize/cleanup lifecycle.
+        self.session: Optional[aiohttp.ClientSession] = None
+
+    async def initialize(self):
+        """Initialize async HTTP client."""
+        if not self.session or self.session.closed:
+            timeout = aiohttp.ClientTimeout(total=30.0)
+            self.session = aiohttp.ClientSession(timeout=timeout)
+
+    async def cleanup(self):
+        """Cleanup async HTTP client."""
+        if self.session and not self.session.closed:
+            await self.session.close()
+            self.session = None
 
     async def _make_request(self, endpoint: str, params: dict = None) -> dict:
         """Macht einen API Request mit Rate Limiting"""
         await self.rate_limiter.acquire()
 
+        # Ensure session is initialized
+        if not self.session or self.session.closed:
+            await self.initialize()
+
         url = f"{self.api_config.base_url}{endpoint}"
         headers = self.api_config.headers.copy()
 
         try:
-            # TODO: self.session is undefined. Initialize an async client (e.g., in an initialize() method) and close it on cleanup.
             async with self.session.get(url, headers=headers, params=params) as response:
                 response.raise_for_status()
                 return await response.json()
@@ -42,13 +59,18 @@ class FootballDataCollector(DataCollector):
 
         teams = []
         for team_data in data.get("teams", []):
-            # TODO: The Team model expects `team_id` and `name`, not external_id/short_name/city/founded_year.
-            # TODO: Map fields accordingly and add external_ids if needed.
+            # Map Football-data.org fields to Team model
             team = Team(
                 team_id=str(team_data["id"]),
                 name=team_data["name"],
                 country=team_data.get("area", {}).get("name"),
                 founded=team_data.get("founded"),
+                # Add external_ids mapping for cross-reference
+                external_ids={
+                    "football_data": str(team_data["id"]),
+                    "short_name": team_data.get("shortName", ""),
+                    "tla": team_data.get("tla", "")  # Three Letter Acronym
+                } if hasattr(Team, 'external_ids') else None
             )
             teams.append(team)
 
@@ -61,8 +83,18 @@ class FootballDataCollector(DataCollector):
 
         players = []
         for player_data in data.get("squad", []):
-            # TODO: Player model has `name` not first/last name fields. Compose full name accordingly or extend the model.
-            full_name = player_data.get("name") or ""
+            # Compose full name from available fields
+            name_parts = []
+            if player_data.get("name"):
+                name_parts.append(player_data["name"])
+            elif player_data.get("firstName") and player_data.get("lastName"):
+                name_parts.extend([player_data["firstName"], player_data["lastName"]])
+            
+            full_name = " ".join(name_parts) if name_parts else "Unknown"
+            
+            # Map position if available
+            position = player_data.get("position", "")
+            
             player = Player(
                 player_id=str(player_data["id"]),
                 name=full_name,
@@ -72,7 +104,7 @@ class FootballDataCollector(DataCollector):
                     else None
                 ),
                 nationality=player_data.get("nationality"),
-                # TODO: Map position to enum Position if possible.
+                position=position if position else None,
             )
             players.append(player)
 
@@ -86,15 +118,32 @@ class FootballDataCollector(DataCollector):
 
         matches = []
         for match_data in data.get("matches", []):
-            # TODO: Domain Match expects match_id, utc_datetime (aware), home/away team IDs, and status mapped to MatchStatus enum.
+            # Map status to MatchStatus enum values
+            status_mapping = {
+                "SCHEDULED": "scheduled",
+                "LIVE": "live", 
+                "IN_PLAY": "live",
+                "PAUSED": "live",
+                "FINISHED": "finished",
+                "POSTPONED": "postponed",
+                "CANCELLED": "cancelled",
+                "SUSPENDED": "suspended"
+            }
+            
+            api_status = match_data.get("status", "SCHEDULED")
+            mapped_status = status_mapping.get(api_status, "scheduled")
+            
             match = Match(
                 match_id=str(match_data["id"]),
                 home_team_id=str(match_data["homeTeam"]["id"]),
                 away_team_id=str(match_data["awayTeam"]["id"]),
                 utc_datetime=datetime.fromisoformat(match_data["utcDate"].replace("Z", "+00:00")),
-                status="finished" if match_data["status"] == "FINISHED" else "scheduled",
+                status=mapped_status,
                 competition=str(league_id),
                 season=season,
+                # Add venue and round if available
+                venue=match_data.get("venue", {}).get("name") if match_data.get("venue") else None,
+                round=match_data.get("matchday") or match_data.get("round", {}).get("name"),
             )
             matches.append(match)
 
