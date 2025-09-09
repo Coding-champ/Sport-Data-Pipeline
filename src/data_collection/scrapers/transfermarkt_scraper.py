@@ -19,7 +19,6 @@ class TransfermarktScraper(DataCollector):
         self.settings = settings
         self.base_url = "https://www.transfermarkt.de"
         self.driver = None
-        # TODO: Add a logger to the collector base or here for consistency: self.logger = logging.getLogger('scraper.transfermarkt')
 
     async def initialize(self):
         """Initialisiert den Scraper (SAFE_MODE kompatibel).

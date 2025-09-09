@@ -5,6 +5,7 @@ Base classes for data collectors in the Sport Data Pipeline.
 from abc import ABC, abstractmethod
 from typing import Any, List, Optional
 import asyncio
+import logging
 
 class RateLimiter:
     """Simple async rate limiter."""
@@ -23,12 +24,19 @@ class DataCollector(ABC):
     def __init__(self, name: str, db_manager: Any):
         self.name = name
         self.db_manager = db_manager
-        # TODO: Add `self.logger = logging.getLogger(f'collector.{name}')` to provide consistent logging across collectors.
+        self.logger = logging.getLogger(f'collector.{name}')
 
     @abstractmethod
     async def collect_teams(self, league_id: Optional[str] = None) -> List[Any]:
-        """Collect teams for a league."""
-        pass  # TODO: Provide docstring details for parameters and return types.
+        """Collect teams for a league.
+        
+        Args:
+            league_id: Optional league identifier. If None, collect all teams.
+            
+        Returns:
+            List of team objects or dictionaries.
+        """
+        pass
 
     @abstractmethod
     async def collect_players(self, team_id: Optional[str] = None) -> List[Any]:
