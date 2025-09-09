@@ -17,6 +17,8 @@ class FootballDataCollector(DataCollector):
         super().__init__("football_data", db_manager)
         self.api_config = api_config
         self.rate_limiter = RateLimiter(api_config.rate_limit)
+        # TODO: Add an async HTTP client (e.g., aiohttp.ClientSession or httpx.AsyncClient) as self.session, and initialize/cleanup lifecycle.
+        # TODO: Add a logger: self.logger = logging.getLogger('collector.football_data')
 
     async def _make_request(self, endpoint: str, params: dict = None) -> dict:
         """Macht einen API Request mit Rate Limiting"""
@@ -26,10 +28,12 @@ class FootballDataCollector(DataCollector):
         headers = self.api_config.headers.copy()
 
         try:
+            # TODO: self.session is undefined. Initialize an async client (e.g., in an initialize() method) and close it on cleanup.
             async with self.session.get(url, headers=headers, params=params) as response:
                 response.raise_for_status()
                 return await response.json()
         except Exception as e:
+            # TODO: self.logger is undefined. Add a logger to the base class or here.
             self.logger.error(f"API request failed: {url} - {e}")
             raise
 
@@ -40,13 +44,13 @@ class FootballDataCollector(DataCollector):
 
         teams = []
         for team_data in data.get("teams", []):
+            # TODO: The Team model expects `team_id` and `name`, not external_id/short_name/city/founded_year.
+            # TODO: Map fields accordingly and add external_ids if needed.
             team = Team(
-                external_id=str(team_data["id"]),
+                team_id=str(team_data["id"]),
                 name=team_data["name"],
-                short_name=team_data.get("shortName"),
-                city=team_data.get("area", {}).get("name"),
-                founded_year=team_data.get("founded"),
-                logo_url=team_data.get("crest"),
+                country=team_data.get("area", {}).get("name"),
+                founded=team_data.get("founded"),
             )
             teams.append(team)
 
@@ -59,17 +63,18 @@ class FootballDataCollector(DataCollector):
 
         players = []
         for player_data in data.get("squad", []):
+            # TODO: Player model has `name` not first/last name fields. Compose full name accordingly or extend the model.
+            full_name = player_data.get("name") or ""
             player = Player(
-                external_id=str(player_data["id"]),
-                first_name=player_data.get("name", "").split()[0],
-                last_name=" ".join(player_data.get("name", "").split()[1:]),
+                player_id=str(player_data["id"]),
+                name=full_name,
                 birth_date=(
                     datetime.fromisoformat(player_data["dateOfBirth"])
                     if player_data.get("dateOfBirth")
                     else None
                 ),
                 nationality=player_data.get("nationality"),
-                position=player_data.get("position"),
+                # TODO: Map position to enum Position if possible.
             )
             players.append(player)
 
@@ -83,15 +88,14 @@ class FootballDataCollector(DataCollector):
 
         matches = []
         for match_data in data.get("matches", []):
+            # TODO: Domain Match expects match_id, utc_datetime (aware), home/away team IDs, and status mapped to MatchStatus enum.
             match = Match(
-                external_id=str(match_data["id"]),
+                match_id=str(match_data["id"]),
                 home_team_id=str(match_data["homeTeam"]["id"]),
                 away_team_id=str(match_data["awayTeam"]["id"]),
-                match_date=datetime.fromisoformat(match_data["utcDate"].replace("Z", "+00:00")),
-                status=match_data["status"],
-                home_score=match_data["score"]["fullTime"]["home"],
-                away_score=match_data["score"]["fullTime"]["away"],
-                league_id=league_id,
+                utc_datetime=datetime.fromisoformat(match_data["utcDate"].replace("Z", "+00:00")),
+                status="finished" if match_data["status"] == "FINISHED" else "scheduled",
+                competition=str(league_id),
                 season=season,
             )
             matches.append(match)

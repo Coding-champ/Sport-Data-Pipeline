@@ -7,11 +7,13 @@ import sys
 import time
 from time import perf_counter
 
-from common.http import DEFAULT_UAS, fetch_html, fetch_json
+from src.common.http import DEFAULT_UAS, fetch_html, fetch_json  # TODO: Fixed import path to `src.common.http`.
 from common.playwright_utils import BrowserSession, RenderWait  # type: ignore
 
 # Official Premier League site is highly dynamic; many resources are loaded via JSON APIs.
 # Using shared HTTP utilities from common/http.py.
+
+# TODO: Align import for playwright utils to `src.common.playwright_utils` for consistency if available.
 
 
 def _pick_ua(args) -> str:

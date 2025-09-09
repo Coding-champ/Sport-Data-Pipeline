@@ -6,7 +6,7 @@ import sys
 import time
 from time import perf_counter
 
-from common.http import DEFAULT_UAS, fetch_html
+from src.common.http import DEFAULT_UAS, fetch_html  # TODO: Fixed import path to `src.common.http` for package consistency.
 
 # Using shared HTTP utilities from common/http.py
 

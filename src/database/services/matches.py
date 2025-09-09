@@ -20,14 +20,20 @@ async def upsert_matches(db: DatabaseManager, data: list[dict]):
 
     processed = []
     for item in data:
+        # TODO: Normalize field names. Some scrapers use 'home'/'away' or 'home_team_name'/'away_team_name'.
+        home = item.get("home_team") or item.get("home") or item.get("home_team_name")
+        away = item.get("away_team") or item.get("away") or item.get("away_team_name")
+        if not (home and away and item.get("scraped_at")):
+            # TODO: Consider logging/metrics for dropped records.
+            continue
         # Stable external id: sha1 of home|away|date
-        id_src = f"{item['home_team']}|{item['away_team']}|{item['scraped_at'].date()}".encode()
+        id_src = f"{home}|{away}|{item['scraped_at'].date()}".encode()
         external_id = hashlib.sha1(id_src).hexdigest()
         processed.append(
             {
                 "external_id": external_id,
-                "home_team_name": item["home_team"],
-                "away_team_name": item["away_team"],
+                "home_team_name": home,
+                "away_team_name": away,
                 "home_score": item.get("home_score"),
                 "away_score": item.get("away_score"),
                 "status": item.get("status", "scheduled"),

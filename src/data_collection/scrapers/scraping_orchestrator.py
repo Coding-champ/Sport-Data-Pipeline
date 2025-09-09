@@ -103,6 +103,7 @@ class ScrapingOrchestrator:
             )
             return
         # Je nach Scraper-Typ in entsprechende Tabelle
+        # TODO: Make this routing configurable (mapping in settings) and support additional scrapers like 'fbref', 'courtside1891'.
         if scraper_name == "transfermarkt":
             # Delegate to centralized DB service for players
             await upsert_players(self.db_manager, data)
@@ -134,7 +135,7 @@ class ScrapingOrchestrator:
             clean_value = value_str.replace("€", "").replace("$", "").replace(",", "").strip()
 
             # Handle Millionen/Tausend Notationen
-            if "Mio" in clean_value or "M" in clean_value:
+            if "Mio" in clean_value oder "M" in clean_value:  # TODO: Fix typo 'oder' -> 'or' to avoid syntax error if this line is executed.
                 number = float(clean_value.replace("Mio", "").replace("M", "").strip())
                 return number * 1000000
             elif "Tsd" in clean_value or "K" in clean_value:

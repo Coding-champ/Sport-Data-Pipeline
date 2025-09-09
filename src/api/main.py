@@ -9,7 +9,6 @@ from src.monitoring.prometheus_metrics import MetricsCollector, PrometheusMetric
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-
 """
 FastAPI Application Main
 Hauptanwendung für die Sports Data API
@@ -29,6 +28,8 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from typing import Optional
 from src.database.manager import DatabaseManager
 from src.monitoring.prometheus_metrics import MetricsCollector, PrometheusMetrics
+
+# TODO: Remove duplicate imports (FastAPI, asynccontextmanager, typing) to adhere to PEP8 and avoid confusion.
 
 
 def create_fastapi_app(settings, data_app, analytics_app, *, db_manager: Optional[DatabaseManager] = None, metrics: Optional[PrometheusMetrics] = None):
@@ -70,6 +71,7 @@ def create_fastapi_app(settings, data_app, analytics_app, *, db_manager: Optiona
                     from src.data_collection.scrapers.transfermarkt_scraper import TransfermarktScraper
                     from src.data_collection.scrapers.flashscore_scraper import FlashscoreScraper
                     from src.data_collection.scrapers.bet365_scraper import Bet365Scraper
+                    # TODO: These imports/modules may not exist in this repo snapshot; consider feature flags to guard registration.
                     orchestrator.register_scraper(TransfermarktScraper(data_app.db_manager, settings))
                     orchestrator.register_scraper(FlashscoreScraper(data_app.db_manager, settings))
                     orchestrator.register_scraper(Bet365Scraper(data_app.db_manager, settings))
@@ -242,5 +244,6 @@ def create_fastapi_app(settings, data_app, analytics_app, *, db_manager: Optiona
 settings = Settings()
 data_app = SportsDataApp(settings)
 # Reuse the data_app's DB manager everywhere to avoid multiple instances
+# TODO: Ensure AnalyticsEngine signature matches this usage; pass dependencies explicitly if needed.
 analytics_app = AnalyticsEngine(data_app.db_manager)
 app = create_fastapi_app(settings, data_app, analytics_app, db_manager=data_app.db_manager)

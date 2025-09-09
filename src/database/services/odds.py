@@ -13,9 +13,10 @@ def _stable_odds_id(item: dict) -> str:
     # Stable external id: sha1 of bookmaker|home|away|date|market
     market = item.get("market_type", "1X2")
     date_part = str(item["scraped_at"].date())
-    src = (
-        f"{item['bookmaker']}|{item['home_team']}|{item['away_team']}|{date_part}|{market}".encode()
-    )
+    # TODO: Normalize team keys ('home_team' vs 'home_team_name').
+    home = item.get("home_team") or item.get("home_team_name")
+    away = item.get("away_team") or item.get("away_team_name")
+    src = f"{item['bookmaker']}|{home}|{away}|{date_part}|{market}".encode()
     return hashlib.sha1(src).hexdigest()
 
 
@@ -31,12 +32,14 @@ async def upsert_odds(db: DatabaseManager, data: list[dict]):
     processed = []
     for item in data:
         external_id = _stable_odds_id(item)
+        home = item.get("home_team") or item.get("home_team_name")
+        away = item.get("away_team") or item.get("away_team_name")
         processed.append(
             {
                 "external_id": external_id,
                 "bookmaker": item["bookmaker"],
-                "home_team_name": item["home_team"],
-                "away_team_name": item["away_team"],
+                "home_team_name": home,
+                "away_team_name": away,
                 "odds_home": item.get("odds_home"),
                 "odds_draw": item.get("odds_draw"),
                 "odds_away": item.get("odds_away"),

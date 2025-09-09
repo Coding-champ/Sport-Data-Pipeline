@@ -11,11 +11,15 @@ from src.data_collection.collectors.base import DataCollector
 class TransfermarktScraper(DataCollector):
     """Scraper für Transfermarkt.de"""
 
+    # TODO: This class should likely inherit from BaseScraper (scrapers/base.py) instead of DataCollector
+    # TODO: If it remains a collector, do not register it in ScrapingOrchestrator (expects BaseScraper). Align architecture.
+
     def __init__(self, db_manager, settings=None):
         super().__init__("transfermarkt", db_manager)
         self.settings = settings
         self.base_url = "https://www.transfermarkt.de"
         self.driver = None
+        # TODO: Add a logger to the collector base or here for consistency: self.logger = logging.getLogger('scraper.transfermarkt')
 
     async def initialize(self):
         """Initialisiert den Scraper (SAFE_MODE kompatibel).
@@ -24,12 +28,14 @@ class TransfermarktScraper(DataCollector):
         nur einen No-Op, damit der ScrapingOrchestrator nicht fehlschlägt.
         Später kann hier Selenium/Playwright Setup ergänzt werden.
         """
+        # TODO: If refactored to BaseScraper, implement aiohttp/cloudscraper/playwright init and cleanup.
         return
 
     async def scrape_data(self) -> list[dict]:
         """Basismethode für Orchestrator-Kompatibilität.
         Transfermarkt hat keine einfache generische Liste – wir geben leer zurück.
         """
+        # TODO: Implement an actual scraping pipeline (e.g., squads, players, market values) or remove this method and use dedicated tasks.
         return []
 
     async def scrape_players_data(self, team_url: str) -> list[dict]:
@@ -39,6 +45,7 @@ class TransfermarktScraper(DataCollector):
         try:
             # Beispiel-Implementation
             # In echter Implementation würde hier Selenium verwendet
+            # TODO: Replace with requests/BeautifulSoup or Playwright implementation; avoid sleep-based placeholders.
             self.logger.info(f"Scraping players from: {team_url}")
 
             # Placeholder für echte Scraping-Logik
@@ -53,6 +60,7 @@ class TransfermarktScraper(DataCollector):
     async def collect_teams(self, league_id: str = None) -> list:
         """Sammelt Teams von Transfermarkt"""
         # Placeholder - würde echte Scraping-Logik implementieren
+        # TODO: Implement or remove unused interface methods if this is a Scraper not a Collector.
         return []
 
     async def collect_players(self, team_id: str = None) -> list:

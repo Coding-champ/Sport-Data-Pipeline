@@ -209,6 +209,7 @@ class FbrefScraper(BaseScraper):
 
                     # Try DB processing; if DB not available, return scraped IDs
                     try:
+                        # TODO: _process_matches returns dicts; function signature says list[dict]. Unify return type to list[MatchRef] for consistency or adjust annotations.
                         return await self._process_matches(matches_all)
                     except Exception as db_err:
                         self.logger.error(
@@ -230,7 +231,7 @@ class FbrefScraper(BaseScraper):
                 self.logger.error(f"Attempt {attempt + 1} failed: {str(e)}")
 
                 # Save detailed debug info
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
                 if self.config.screenshot_on_error and 'page' in locals():
                     try:
                         out_dir = os.path.join(self.settings.log_file_path, 'fbref')
@@ -262,6 +263,7 @@ class FbrefScraper(BaseScraper):
         match_ids = [m["match_id"] for m in matches]
         existing_match_ids: set = set()
         if match_ids:
+            # TODO: Verify table/column names. Current DB schema uses matches.id and matches.external_ids(JSON), not matches.external_id (text).
             existing_matches = await self.db_manager.execute_query(
                 "SELECT external_id FROM matches WHERE external_id = ANY($1::text[])", match_ids
             )
@@ -273,6 +275,7 @@ class FbrefScraper(BaseScraper):
         )
         existing_club_ids: set = set()
         if all_club_ids:
+            # TODO: Same mismatch as above: ensure clubs table and external_id column actually exist.
             existing_clubs = await self.db_manager.execute_query(
                 "SELECT external_id FROM clubs WHERE external_id = ANY($1::text[])", all_club_ids
             )
@@ -452,6 +455,7 @@ class FbrefScraper(BaseScraper):
 
             required_keys = {"match_id", "home_club_id", "away_club_id"}
             for result in test_results:
+                # TODO: If scrape_data returns MatchRef objects, adjust this validation accordingly.
                 if not all(key in result for key in required_keys):
                     self.logger.error(f"Test failed - missing keys in result: {result}")
                     return False

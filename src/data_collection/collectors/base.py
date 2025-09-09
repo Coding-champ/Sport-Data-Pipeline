@@ -13,6 +13,7 @@ class RateLimiter:
         self._lock = asyncio.Semaphore(rate_limit)
 
     async def acquire(self):
+        # TODO: This is a concurrency limiter, not a true rate limiter. Replace with a token bucket/leaky bucket to enforce N requests per time window.
         await self._lock.acquire()
         await asyncio.sleep(1 / self.rate_limit)
         self._lock.release()
@@ -22,19 +23,24 @@ class DataCollector(ABC):
     def __init__(self, name: str, db_manager: Any):
         self.name = name
         self.db_manager = db_manager
+        # TODO: Add `self.logger = logging.getLogger(f'collector.{name}')` to provide consistent logging across collectors.
 
     @abstractmethod
     async def collect_teams(self, league_id: Optional[str] = None) -> List[Any]:
-        pass
+        """Collect teams for a league."""
+        pass  # TODO: Provide docstring details for parameters and return types.
 
     @abstractmethod
     async def collect_players(self, team_id: Optional[str] = None) -> List[Any]:
+        """Collect players for a team."""
         pass
 
     @abstractmethod
     async def collect_matches(self, league_id: str, season: str) -> List[Any]:
+        """Collect matches for a given league and season."""
         pass
 
     @abstractmethod
     async def collect_odds(self, match_id: Optional[str] = None) -> List[dict]:
+        """Collect odds for a match (if provider supports it)."""
         pass

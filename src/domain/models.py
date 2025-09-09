@@ -31,12 +31,14 @@ class Club(BaseModel):
     @field_validator("stats", mode="before")
     @classmethod
     def coerce_stats_numbers(cls, v: Any) -> dict[str, Number]:
+        # TODO: Use a tolerant coercion path for None/"" values instead of raising to avoid rejecting partial rows.
         if not isinstance(v, dict):
             raise ValueError("stats must be a dict")
         out: dict[str, Number] = {}
         for k, val in v.items():
             # Already numeric
-            if isinstance(val, int | float):
+            # FIX: isinstance does not accept union types (int | float) here; using tuple form instead.
+            if isinstance(val, (int, float)):
                 out[k] = val
                 continue
             # Try to coerce numeric strings like "85.1" or "111"
@@ -81,6 +83,7 @@ class Team(BaseModel):
     season: Optional[str] = None
     founded: Optional[int] = Field(default=None, ge=1800, le=2100)
     venue: Optional[Venue] = None
+    # TODO: Consider adding external_ids: dict[str,str] to align with DB schema.external_ids and scrapers.
 
 
 class Position(str, Enum):
@@ -106,6 +109,7 @@ class Player(BaseModel):
     height_cm: Optional[int] = Field(default=None, ge=120, le=230)
     weight_kg: Optional[float] = Field(default=None, ge=40, le=130)
     foot: Optional[Footedness] = None
+    # TODO: Many collectors/scrapers produce first_name/last_name and external_ids; consider extending the model or adding a mapping layer.
 
 
 class MatchStatus(str, Enum):
@@ -142,6 +146,7 @@ class Match(BaseModel):
     venue: Optional[Venue] = None
     status: MatchStatus = MatchStatus.SCHEDULED
     result: Optional[MatchResult] = None
+    # TODO: Consider adding external_ids and source_url to align with ingestion scripts.
 
 
 class InjuryStatus(str, Enum):
