@@ -1,12 +1,18 @@
 -- PostgreSQL schema for Sports Data Pipeline
 -- Target: PostgreSQL
--- Notes:
+-- Sports: Football (Soccer), Basketball, American Football
+-- Features:
+-- - Multi-sport support with sport-specific entities
 -- - Supports club and national teams via team_type
 -- - Seasons support both cross-year (e.g., 2024/2025) and calendar-year via season_type + label
--- - Odds: only pre-match OPEN/CLOSE
--- - Lineups/Events support pitch coordinates (x,y in percent)
--- - Staff model (head/assistant/GK coach, etc.)
+-- - Comprehensive odds tracking (pre-match, live, closing)
+-- - Lineups/Events support field/court coordinates (x,y in percent)
+-- - Extended staff model (medical, technical, administrative)
 -- - SCD2-style historization for Club and Venue names
+-- - Enhanced JSONB usage for flexible statistics storage
+-- - Technology integration (VAR, Goal-line technology, GPS tracking)
+-- - Medical and injury tracking system
+-- - Youth development and academy support
 -- - Audit fields: source_url, scraped_at, created_at, updated_at
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -14,18 +20,52 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- =========================
 -- Enums
 -- =========================
-CREATE TYPE team_type AS ENUM ('club', 'national', 'youth', 'women');
+-- Core sport types
+CREATE TYPE sport_enum AS ENUM ('football', 'basketball', 'american_football');
+
+-- Team classification
+CREATE TYPE team_type AS ENUM ('club', 'national', 'youth', 'women', 'academy');
 CREATE TYPE strong_foot AS ENUM ('left', 'right', 'both');
-CREATE TYPE surface_type AS ENUM ('grass', 'hybrid', 'artificial', 'indoor');
-CREATE TYPE official_role AS ENUM ('referee', 'ar1', 'ar2', 'fourth', 'var', 'avar');
-CREATE TYPE price_type AS ENUM ('open', 'close');
+CREATE TYPE surface_type AS ENUM ('grass', 'hybrid', 'artificial', 'indoor', 'hardwood', 'turf');
+
+-- Officials and staff
+CREATE TYPE official_role AS ENUM ('referee', 'ar1', 'ar2', 'fourth', 'var', 'avar', 'umpire', 'line_judge', 'field_judge');
+CREATE TYPE staff_role AS ENUM ('head_coach', 'assistant_coach', 'gk_coach', 'fitness_coach', 'analyst', 'physio', 'medical', 'team_manager', 'nutritionist', 'psychologist', 'equipment_manager', 'video_analyst', 'scout');
+
+-- Betting and odds
+CREATE TYPE price_type AS ENUM ('open', 'close', 'live');
 CREATE TYPE season_type AS ENUM ('cross_year', 'calendar_year');
-CREATE TYPE staff_role AS ENUM ('head_coach', 'assistant_coach', 'gk_coach', 'fitness_coach', 'analyst', 'physio', 'medical', 'team_manager');
+
+-- Medical and health
 CREATE TYPE nationality_type AS ENUM ('nationality', 'citizenship');
+CREATE TYPE injury_type AS ENUM ('muscle', 'bone', 'joint', 'ligament', 'concussion', 'illness', 'other');
+CREATE TYPE absence_reason AS ENUM ('injury', 'suspension', 'illness', 'national_duty', 'personal', 'coach_decision');
+
+-- Technology integration
+CREATE TYPE technology_type AS ENUM ('var', 'goal_line', 'offside', 'gps', 'heart_rate', 'player_tracking');
+
+-- Youth development
+CREATE TYPE academy_level AS ENUM ('u8', 'u10', 'u12', 'u14', 'u16', 'u18', 'u21', 'reserve');
+
+-- Basketball specific
+CREATE TYPE basketball_position AS ENUM ('point_guard', 'shooting_guard', 'small_forward', 'power_forward', 'center');
+
+-- American Football specific  
+CREATE TYPE american_football_position AS ENUM ('quarterback', 'running_back', 'wide_receiver', 'tight_end', 'offensive_line', 'defensive_line', 'linebacker', 'defensive_back', 'kicker', 'punter');
 
 -- =========================
 -- Core Lookups
 -- =========================
+-- Sports definition table
+CREATE TABLE sport (
+    sport_id SERIAL PRIMARY KEY,
+    sport_type sport_enum NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT,
+    rules_url TEXT,
+    governing_body TEXT
+);
+
 CREATE TABLE country (
     country_id SERIAL PRIMARY KEY,
     iso2 CHAR(2) UNIQUE,
@@ -43,14 +83,20 @@ CREATE TABLE city (
 CREATE TABLE association (
     association_id SERIAL PRIMARY KEY,
     association_name TEXT NOT NULL,
+    sport_id INT REFERENCES sport(sport_id) ON DELETE RESTRICT,
     is_national BOOLEAN DEFAULT TRUE,
     parent_association_id INT REFERENCES association(association_id) ON DELETE SET NULL
 );
 
+-- Enhanced position lookup with sport-specific positions
 CREATE TABLE position_lookup (
     position_id SERIAL PRIMARY KEY,
-    code TEXT NOT NULL UNIQUE, -- e.g., GK, RB, CB, LB, DM, CM, AM, RW, LW, ST
-    name TEXT
+    sport_id INT REFERENCES sport(sport_id) ON DELETE RESTRICT,
+    code TEXT NOT NULL, -- e.g., GK, RB, CB, PG, QB, etc.
+    name TEXT NOT NULL,
+    position_group TEXT, -- e.g., 'defense', 'midfield', 'attack', 'guard', 'forward', 'offense'
+    sport_specific_data JSONB, -- Flexible data for sport-specific attributes
+    UNIQUE(sport_id, code)
 );
 
 CREATE TABLE weather_lookup (
@@ -65,8 +111,9 @@ CREATE TABLE bookmaker (
 
 CREATE TABLE betting_market (
     market_id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,      -- e.g., 1X2, Over/Under, Asian Handicap
-    UNIQUE(name)
+    sport_id INT REFERENCES sport(sport_id) ON DELETE RESTRICT,
+    name TEXT NOT NULL,      -- e.g., 1X2, Over/Under, Asian Handicap, Moneyline, Point Spread
+    UNIQUE(sport_id, name)
 );
 
 CREATE TABLE betting_outcome (
@@ -81,17 +128,28 @@ CREATE TABLE betting_outcome (
 -- =========================
 CREATE TABLE club (
     club_id SERIAL PRIMARY KEY,
-    code TEXT UNIQUE,                -- optional short code like FCB, BVB
+    sport_id INT REFERENCES sport(sport_id) ON DELETE RESTRICT,
+    code TEXT UNIQUE,                -- optional short code like FCB, BVB, LAL (Lakers)
     founding_year INT,
     colors TEXT,
     association_id INT REFERENCES association(association_id) ON DELETE SET NULL,
-    sport TEXT DEFAULT 'football',
     country_id INT REFERENCES country(country_id) ON DELETE SET NULL,
     city_id INT REFERENCES city(city_id) ON DELETE SET NULL,
     members INT,                     -- membership count
     address_street TEXT,
     address_postal_code TEXT,
     address_city_id INT REFERENCES city(city_id) ON DELETE SET NULL,
+    -- Commercial information
+    market_value NUMERIC(15,2),
+    market_value_currency TEXT DEFAULT 'EUR',
+    main_sponsor TEXT,
+    kit_supplier TEXT,
+    -- Multi-sport club support
+    parent_club_id INT REFERENCES club(club_id) ON DELETE SET NULL, -- for multi-sport organizations
+    -- Social media and web presence
+    website_url TEXT,
+    social_media JSONB, -- {twitter:"", instagram:"", tiktok:"", youtube:"", facebook:""}
+    -- Audit fields
     source_url TEXT,
     scraped_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -122,11 +180,27 @@ CREATE TABLE venue (
     construction_date DATE,
     opening_date DATE,
     surface surface_type NOT NULL,
-    field_size NUMERIC,
+    -- Multi-sport venue support
+    supported_sports JSONB, -- Array of sport types this venue supports
+    -- Sport-specific dimensions
+    field_dimensions JSONB, -- {football: {length: 105, width: 68}, basketball: {length: 28, width: 15}}
     capacity_national INT,
     capacity_international INT,
-    multi_sports BOOLEAN,
+    capacity_details JSONB, -- {total: 75000, seated: 65000, standing: 10000, vip: 2000}
+    -- Technology and facilities
+    has_var BOOLEAN DEFAULT FALSE,
+    has_goal_line_tech BOOLEAN DEFAULT FALSE,
+    has_player_tracking BOOLEAN DEFAULT FALSE,
+    facilities JSONB, -- {parking_spaces: 5000, restaurants: 12, shops: 8, conference_rooms: 20}
+    -- Environmental
+    indoor BOOLEAN DEFAULT FALSE,
+    retractable_roof BOOLEAN DEFAULT FALSE,
+    climate_controlled BOOLEAN DEFAULT FALSE,
+    -- Commercial
+    naming_rights_sponsor TEXT,
+    naming_rights_until DATE,
     official_website TEXT,
+    -- Audit fields
     source_url TEXT,
     scraped_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -160,6 +234,7 @@ CREATE TABLE club_venue_tenancy (
 -- =========================
 CREATE TABLE team (
     team_id SERIAL PRIMARY KEY,
+    sport_id INT NOT NULL REFERENCES sport(sport_id) ON DELETE RESTRICT,
     club_id INT REFERENCES club(club_id) ON DELETE SET NULL,  -- null for national teams
     country_id INT REFERENCES country(country_id) ON DELETE SET NULL, -- set for national teams
     team_type team_type NOT NULL,
@@ -168,13 +243,23 @@ CREATE TABLE team (
     social_media JSONB, -- {twitter:"", instagram:"", tiktok:"", youtube:""}
     is_senior BOOLEAN DEFAULT TRUE,
     is_male BOOLEAN,
+    -- Youth development
+    academy_level academy_level,
+    parent_team_id INT REFERENCES team(team_id) ON DELETE SET NULL, -- link to senior team
+    -- Commercial
+    main_sponsor TEXT,
+    kit_supplier TEXT,
+    -- Performance tracking
+    current_form JSONB, -- Last 5-10 games performance summary
+    season_objectives JSONB, -- {league_position: 4, cup_progress: "quarter_finals"}
+    -- Audit fields
     source_url TEXT,
     scraped_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT team_club_or_country CHECK (
         (team_type = 'club' AND club_id IS NOT NULL) OR
-        (team_type IN ('national','youth','women') AND (club_id IS NULL OR team_type='youth') )
+        (team_type IN ('national','youth','women') AND (club_id IS NULL OR team_type IN ('youth','academy')) )
     )
 );
 
@@ -205,17 +290,38 @@ CREATE TABLE equipment_supplier (
 
 CREATE TABLE player (
     player_id SERIAL PRIMARY KEY,
+    sport_id INT NOT NULL REFERENCES sport(sport_id) ON DELETE RESTRICT,
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
     nickname TEXT,
     birthdate DATE,
     birth_city_id INT REFERENCES city(city_id) ON DELETE SET NULL,
+    -- Physical attributes
     height_cm INT,
     weight_kg INT,
     strong_foot strong_foot,
+    -- Sport-specific attributes stored as JSONB
+    sport_attributes JSONB, -- {shooting_range: "3pt", vertical_leap: 85, sprint_speed: 32.5}
+    -- Career information
     is_active BOOLEAN DEFAULT TRUE,
+    professional_debut DATE,
+    retirement_date DATE,
+    -- Youth development
+    youth_career JSONB, -- [{club: "Barcelona", from: "2015", to: "2018", level: "u18"}]
+    -- Commercial relationships
     agent_id INT REFERENCES agent(agent_id) ON DELETE SET NULL,
     equipment_supplier_id INT REFERENCES equipment_supplier(equipment_supplier_id) ON DELETE SET NULL,
+    -- Medical and fitness
+    medical_clearance BOOLEAN DEFAULT TRUE,
+    medical_clearance_date DATE,
+    fitness_level JSONB, -- Latest fitness test results
+    -- Social and digital presence
+    social_media JSONB, -- {instagram: "@player", twitter: "@player", tiktok: "@player"}
+    -- Performance analytics
+    career_stats JSONB, -- Aggregated career statistics
+    current_market_value NUMERIC(12,2),
+    current_market_value_currency TEXT DEFAULT 'EUR',
+    -- Audit fields
     source_url TEXT,
     scraped_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -249,8 +355,28 @@ CREATE TABLE staff_member (
     last_name TEXT NOT NULL,
     birthdate DATE,
     birth_city_id INT REFERENCES city(city_id) ON DELETE SET NULL,
+    -- Qualifications and certifications
+    qualifications JSONB, -- {uefa_pro_license: true, medical_degree: true, certifications: ["FIFA", "UEFA"]}
+    specializations JSONB, -- {areas: ["youth_development", "injury_prevention"], languages: ["en", "de", "es"]}
+    experience_years INT,
+    -- Contact and social media
+    social_media JSONB,
+    -- Audit fields
     source_url TEXT,
     scraped_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Medical staff specifically
+CREATE TABLE medical_staff (
+    medical_staff_id SERIAL PRIMARY KEY,
+    staff_id INT REFERENCES staff_member(staff_id) ON DELETE CASCADE,
+    medical_license_number TEXT,
+    medical_license_country_id INT REFERENCES country(country_id) ON DELETE SET NULL,
+    specialization TEXT, -- e.g., 'sports_medicine', 'physiotherapy', 'nutrition', 'psychology'
+    can_prescribe_medication BOOLEAN DEFAULT FALSE,
+    emergency_certified BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -260,6 +386,7 @@ CREATE TABLE staff_member (
 -- =========================
 CREATE TABLE competition (
     competition_id SERIAL PRIMARY KEY,
+    sport_id INT NOT NULL REFERENCES sport(sport_id) ON DELETE RESTRICT,
     competition_name TEXT NOT NULL,
     association_id INT REFERENCES association(association_id) ON DELETE SET NULL,
     country_id INT REFERENCES country(country_id) ON DELETE SET NULL,
@@ -268,6 +395,9 @@ CREATE TABLE competition (
     is_youth BOOLEAN DEFAULT FALSE,
     is_women BOOLEAN DEFAULT FALSE,
     is_national BOOLEAN,
+    -- Competition format and rules
+    competition_format JSONB, -- {type: "league", playoff_format: "single_elimination", teams: 20}
+    prize_money JSONB, -- {winner: 50000000, runner_up: 25000000, currency: "EUR"}
     UNIQUE (competition_name, COALESCE(country_id, -1), COALESCE(association_id, -1))
 );
 
@@ -281,6 +411,8 @@ CREATE TABLE season (
     is_active BOOLEAN DEFAULT FALSE,
     number_of_teams INT,
     number_of_games INT,
+    -- Season-specific rules and regulations
+    rules JSONB, -- {var_usage: true, max_subs: 5, extra_time: 30, playoff_format: "best_of_7"}
     UNIQUE (competition_id, label)
 );
 
@@ -291,7 +423,78 @@ CREATE TABLE competition_stage (
     name TEXT NOT NULL,       -- e.g., Regular Season, Group A, Round of 16
     round_number INT,
     leg INT,
+    stage_format JSONB, -- {type: "group", teams_per_group: 4, advance_count: 2}
     UNIQUE(competition_id, season_id, name, COALESCE(round_number, -1), COALESCE(leg, -1))
+);
+
+-- =========================
+-- Medical and Health Tracking
+-- =========================
+CREATE TABLE player_injury (
+    injury_id SERIAL PRIMARY KEY,
+    player_id INT NOT NULL REFERENCES player(player_id) ON DELETE CASCADE,
+    injury_type injury_type NOT NULL,
+    injury_description TEXT,
+    body_part TEXT, -- e.g., 'left_knee', 'right_shoulder', 'head'
+    severity TEXT, -- e.g., 'minor', 'moderate', 'severe', 'career_threatening'
+    injury_date DATE,
+    expected_return_date DATE,
+    actual_return_date DATE,
+    medical_staff_id INT REFERENCES medical_staff(medical_staff_id) ON DELETE SET NULL,
+    treatment_plan JSONB, -- Detailed treatment and recovery plan
+    medical_reports JSONB, -- Array of medical report URLs and summaries
+    caused_by_match_id INT REFERENCES match(match_id) ON DELETE SET NULL,
+    source_url TEXT,
+    scraped_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Player fitness and health monitoring
+CREATE TABLE player_fitness_record (
+    fitness_record_id SERIAL PRIMARY KEY,
+    player_id INT NOT NULL REFERENCES player(player_id) ON DELETE CASCADE,
+    test_date DATE NOT NULL,
+    test_type TEXT, -- e.g., 'preseason', 'monthly', 'return_from_injury'
+    fitness_data JSONB, -- {vo2_max: 65, sprint_speed: 32.1, endurance: 85, flexibility: 78}
+    medical_staff_id INT REFERENCES medical_staff(medical_staff_id) ON DELETE SET NULL,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =========================
+-- Technology Integration
+-- =========================
+CREATE TABLE match_technology_data (
+    technology_data_id SERIAL PRIMARY KEY,
+    match_id INT NOT NULL REFERENCES match(match_id) ON DELETE CASCADE,
+    technology_type technology_type NOT NULL,
+    event_minute INT,
+    event_second INT,
+    decision_result JSONB, -- VAR decision, goal-line technology result, etc.
+    technology_provider TEXT,
+    confidence_level NUMERIC(5,2), -- 0-100 confidence in the technology decision
+    human_override BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Player tracking data (GPS, performance metrics)
+CREATE TABLE player_tracking_data (
+    tracking_id SERIAL PRIMARY KEY,
+    match_id INT NOT NULL REFERENCES match(match_id) ON DELETE CASCADE,
+    player_id INT NOT NULL REFERENCES player(player_id) ON DELETE CASCADE,
+    timestamp_seconds INT, -- Second in match when data was recorded
+    -- Physical metrics
+    distance_covered NUMERIC(8,2), -- Total distance in meters
+    top_speed NUMERIC(5,2), -- km/h
+    sprint_count INT,
+    heart_rate INT,
+    -- Positional data
+    x_position NUMERIC(6,2), -- Field position coordinates
+    y_position NUMERIC(6,2),
+    -- Sport-specific metrics stored flexibly
+    performance_metrics JSONB, -- {acceleration: 8.5, deceleration: 7.2, jump_height: 65}
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- =========================
@@ -346,6 +549,7 @@ CREATE TABLE staff_assignment (
 -- =========================
 CREATE TABLE match (
     match_id SERIAL PRIMARY KEY,
+    sport_id INT NOT NULL REFERENCES sport(sport_id) ON DELETE RESTRICT,
     season_id INT NOT NULL REFERENCES season(season_id) ON DELETE CASCADE,
     competition_id INT NOT NULL REFERENCES competition(competition_id) ON DELETE CASCADE,
     stage_id INT REFERENCES competition_stage(stage_id) ON DELETE SET NULL,
@@ -355,10 +559,22 @@ CREATE TABLE match (
     home_team_id INT NOT NULL REFERENCES team(team_id) ON DELETE RESTRICT,
     away_team_id INT NOT NULL REFERENCES team(team_id) ON DELETE RESTRICT,
     referee_country_id INT REFERENCES country(country_id) ON DELETE SET NULL,
+    -- Weather conditions
     weather_id INT REFERENCES weather_lookup(weather_id) ON DELETE SET NULL,
     temperature_c NUMERIC(5,2),
     wind_kmh NUMERIC(6,2),
     rain_intensity NUMERIC(5,2), -- 0..1 or mm/h if available
+    humidity_percent NUMERIC(5,2),
+    -- Match status and timing
+    status TEXT DEFAULT 'scheduled', -- scheduled, live, finished, postponed, cancelled
+    match_duration_minutes INT, -- Actual match duration including stoppage time
+    -- Technology usage
+    technology_used JSONB, -- {var: true, goal_line: true, player_tracking: true}
+    -- Sport-specific data
+    sport_specific_data JSONB, -- Flexible storage for sport-specific match details
+    -- Broadcast and media
+    broadcast_info JSONB, -- {tv_channels: ["ESPN", "Sky"], streaming: ["Netflix"], commentary_languages: ["en", "es"]}
+    -- Audit fields
     source_url TEXT,
     scraped_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -367,10 +583,23 @@ CREATE TABLE match (
 
 CREATE TABLE match_result (
     match_id INT PRIMARY KEY REFERENCES match(match_id) ON DELETE CASCADE,
-    ht_home INT, ht_away INT,
-    ft_home INT, ft_away INT,
-    et_home INT, et_away INT,
-    pens_home INT, pens_away INT
+    -- Standard scores
+    home_score INT,
+    away_score INT,
+    home_score_ht INT, -- Half-time (football) or Q2 (basketball) or H1 (american football)
+    away_score_ht INT,
+    -- Extended time scores (football)
+    home_score_et INT,
+    away_score_et INT,
+    -- Penalty shootout (football)
+    home_score_pens INT,
+    away_score_pens INT,
+    -- Sport-specific scoring breakdown
+    score_breakdown JSONB, -- Basketball: quarters, American Football: quarters, detailed scoring
+    -- Match outcome
+    winner_team_id INT REFERENCES team(team_id) ON DELETE SET NULL,
+    is_draw BOOLEAN DEFAULT FALSE,
+    win_type TEXT -- 'regular', 'overtime', 'penalties', 'forfeit'
 );
 
 CREATE TABLE referee (
@@ -442,7 +671,7 @@ CREATE TABLE match_event (
 );
 
 -- =========================
--- Odds (pre-match only: OPEN/CLOSE)
+-- Odds (pre-match, live, and closing)
 -- =========================
 CREATE TABLE match_odd (
     odd_id SERIAL PRIMARY KEY,
@@ -450,12 +679,21 @@ CREATE TABLE match_odd (
     bookmaker_id INT NOT NULL REFERENCES bookmaker(bookmaker_id) ON DELETE RESTRICT,
     market_id INT NOT NULL REFERENCES betting_market(market_id) ON DELETE RESTRICT,
     outcome_id INT NOT NULL REFERENCES betting_outcome(outcome_id) ON DELETE RESTRICT,
-    price_type price_type NOT NULL, -- open or close
+    price_type price_type NOT NULL, -- open, close, or live
     price NUMERIC(10,4) NOT NULL,   -- decimal odds
-    line NUMERIC(6,2),              -- for totals
-    handicap NUMERIC(6,2),          -- for AH
-    timestamp TIMESTAMPTZ,
-    UNIQUE (match_id, bookmaker_id, market_id, outcome_id, price_type)
+    line NUMERIC(6,2),              -- for totals (e.g., Over/Under 2.5)
+    handicap NUMERIC(6,2),          -- for Asian Handicap and Point Spread
+    timestamp TIMESTAMPTZ NOT NULL,
+    -- Live betting specific fields
+    match_minute INT, -- Minute in match when odds were recorded (for live odds)
+    match_second INT,
+    current_score JSONB, -- Score at time of odds recording for live betting
+    -- Market metadata
+    market_status TEXT DEFAULT 'open', -- open, suspended, closed
+    max_bet_amount NUMERIC(12,2),
+    -- Audit
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (match_id, bookmaker_id, market_id, outcome_id, price_type, timestamp)
 );
 
 -- =========================
@@ -515,20 +753,60 @@ CREATE TABLE trophy_winner (
 -- =========================
 -- Indexes (FK columns and common filters)
 -- =========================
+-- Core entity indexes
+CREATE INDEX idx_club_sport ON club(sport_id);
+CREATE INDEX idx_team_sport ON team(sport_id);
 CREATE INDEX idx_team_club_id ON team(club_id);
 CREATE INDEX idx_team_country_id ON team(country_id);
+CREATE INDEX idx_player_sport ON player(sport_id);
 CREATE INDEX idx_player_birth_city_id ON player(birth_city_id);
+CREATE INDEX idx_player_active ON player(is_active);
+CREATE INDEX idx_position_lookup_sport ON position_lookup(sport_id);
+
+-- Competition and match indexes
+CREATE INDEX idx_competition_sport ON competition(sport_id);
+CREATE INDEX idx_match_sport ON match(sport_id);
+CREATE INDEX idx_match_season ON match(season_id);
+CREATE INDEX idx_match_competition ON match(competition_id);
+CREATE INDEX idx_match_date ON match(match_date_time);
+CREATE INDEX idx_match_teams ON match(home_team_id, away_team_id);
+CREATE INDEX idx_match_venue ON match(venue_id);
+CREATE INDEX idx_match_status ON match(status);
+
+-- Contract and team relationship indexes
 CREATE INDEX idx_contract_player ON contract(player_id);
 CREATE INDEX idx_contract_team ON contract(team_id);
 CREATE INDEX idx_team_season_team ON team_season(team_id);
 CREATE INDEX idx_team_season_season ON team_season(season_id);
 CREATE INDEX idx_squad_member_player ON squad_member(player_id);
-CREATE INDEX idx_match_season ON match(season_id);
-CREATE INDEX idx_match_competition ON match(competition_id);
-CREATE INDEX idx_match_date ON match(match_date_time);
-CREATE INDEX idx_match_teams ON match(home_team_id, away_team_id);
+
+-- Stats and performance indexes
 CREATE INDEX idx_match_event_match ON match_event(match_id);
+CREATE INDEX idx_match_event_player ON match_event(player_id);
+CREATE INDEX idx_team_match_stats_match_team ON team_match_stats(match_id, team_id);
+CREATE INDEX idx_player_match_stats_match_player ON player_match_stats(match_id, player_id);
+CREATE INDEX idx_player_match_stats_provider ON player_match_stats(provider);
+
+-- Betting and odds indexes
+CREATE INDEX idx_betting_market_sport ON betting_market(sport_id);
 CREATE INDEX idx_match_odd_match ON match_odd(match_id);
+CREATE INDEX idx_match_odd_bookmaker ON match_odd(bookmaker_id);
+CREATE INDEX idx_match_odd_timestamp ON match_odd(timestamp);
+CREATE INDEX idx_match_odd_price_type ON match_odd(price_type);
+
+-- Medical and technology indexes
+CREATE INDEX idx_player_injury_player ON player_injury(player_id);
+CREATE INDEX idx_player_injury_date ON player_injury(injury_date);
+CREATE INDEX idx_player_fitness_player ON player_fitness_record(player_id);
+CREATE INDEX idx_player_fitness_date ON player_fitness_record(test_date);
+CREATE INDEX idx_match_technology_match ON match_technology_data(match_id);
+CREATE INDEX idx_player_tracking_match ON player_tracking_data(match_id);
+CREATE INDEX idx_player_tracking_player ON player_tracking_data(player_id);
+
+-- Staff and organizational indexes
+CREATE INDEX idx_medical_staff_staff ON medical_staff(staff_id);
+CREATE INDEX idx_staff_assignment_staff ON staff_assignment(staff_id);
+CREATE INDEX idx_staff_assignment_team_season ON staff_assignment(team_season_id);
 
 -- =========================
 -- Triggers to keep updated_at
@@ -559,24 +837,66 @@ END $$;
 -- Migration 0002_seed.sql
 -- Seed data for core lookups (idempotent)
 
--- Positions
-INSERT INTO position_lookup (code, name) VALUES
-  ('GK','Goalkeeper'),
-  ('RB','Right Back'),
-  ('RCB','Right Center Back'),
-  ('CB','Center Back'),
-  ('LCB','Left Center Back'),
-  ('LB','Left Back'),
-  ('RWB','Right Wing Back'),
-  ('LWB','Left Wing Back'),
-  ('DM','Defensive Midfielder'),
-  ('CM','Central Midfielder'),
-  ('AM','Attacking Midfielder'),
-  ('RW','Right Winger'),
-  ('LW','Left Winger'),
-  ('CF','Center Forward'),
-  ('ST','Striker')
-ON CONFLICT (code) DO NOTHING;
+-- Sports
+INSERT INTO sport (sport_type, name, description, governing_body) VALUES
+  ('football', 'Football (Soccer)', 'Association football played with feet', 'FIFA'),
+  ('basketball', 'Basketball', 'Team sport played on a court with baskets', 'FIBA'),
+  ('american_football', 'American Football', 'Gridiron football played primarily in North America', 'NFL')
+ON CONFLICT (sport_type) DO NOTHING;
+
+-- Positions (Football)
+INSERT INTO position_lookup (sport_id, code, name, position_group) 
+SELECT s.sport_id, p.code, p.name, p.position_group FROM sport s
+CROSS JOIN (VALUES
+  ('GK','Goalkeeper','goalkeeper'),
+  ('RB','Right Back','defense'),
+  ('RCB','Right Center Back','defense'),
+  ('CB','Center Back','defense'),
+  ('LCB','Left Center Back','defense'),
+  ('LB','Left Back','defense'),
+  ('RWB','Right Wing Back','defense'),
+  ('LWB','Left Wing Back','defense'),
+  ('DM','Defensive Midfielder','midfield'),
+  ('CM','Central Midfielder','midfield'),
+  ('AM','Attacking Midfielder','midfield'),
+  ('RW','Right Winger','attack'),
+  ('LW','Left Winger','attack'),
+  ('CF','Center Forward','attack'),
+  ('ST','Striker','attack')
+) AS p(code, name, position_group)
+WHERE s.sport_type = 'football'
+ON CONFLICT (sport_id, code) DO NOTHING;
+
+-- Positions (Basketball)
+INSERT INTO position_lookup (sport_id, code, name, position_group) 
+SELECT s.sport_id, p.code, p.name, p.position_group FROM sport s
+CROSS JOIN (VALUES
+  ('PG','Point Guard','guard'),
+  ('SG','Shooting Guard','guard'),
+  ('SF','Small Forward','forward'),
+  ('PF','Power Forward','forward'),
+  ('C','Center','center')
+) AS p(code, name, position_group)
+WHERE s.sport_type = 'basketball'
+ON CONFLICT (sport_id, code) DO NOTHING;
+
+-- Positions (American Football)
+INSERT INTO position_lookup (sport_id, code, name, position_group) 
+SELECT s.sport_id, p.code, p.name, p.position_group FROM sport s
+CROSS JOIN (VALUES
+  ('QB','Quarterback','offense'),
+  ('RB','Running Back','offense'),
+  ('WR','Wide Receiver','offense'),
+  ('TE','Tight End','offense'),
+  ('OL','Offensive Line','offense'),
+  ('DL','Defensive Line','defense'),
+  ('LB','Linebacker','defense'),
+  ('DB','Defensive Back','defense'),
+  ('K','Kicker','special_teams'),
+  ('P','Punter','special_teams')
+) AS p(code, name, position_group)
+WHERE s.sport_type = 'american_football'
+ON CONFLICT (sport_id, code) DO NOTHING;
 
 -- Event types
 INSERT INTO event_type_lookup (code, name) VALUES
@@ -623,33 +943,76 @@ INSERT INTO bookmaker (name) VALUES
   ('Bet365'), ('Pinnacle'), ('William Hill'), ('Betfair')
 ON CONFLICT (name) DO NOTHING;
 
--- Markets
-INSERT INTO betting_market (name) VALUES
-  ('1X2'), ('Over/Under'), ('Asian Handicap')
-ON CONFLICT (name) DO NOTHING;
+-- Markets (Sport-specific)
+INSERT INTO betting_market (sport_id, name)
+SELECT s.sport_id, m.name FROM sport s
+CROSS JOIN (VALUES
+  ('1X2'),
+  ('Over/Under Goals'),
+  ('Asian Handicap'),
+  ('Both Teams To Score'),
+  ('Correct Score')
+) AS m(name)
+WHERE s.sport_type = 'football'
+ON CONFLICT (sport_id, name) DO NOTHING;
 
--- Outcomes for 1X2
+INSERT INTO betting_market (sport_id, name)
+SELECT s.sport_id, m.name FROM sport s
+CROSS JOIN (VALUES
+  ('Moneyline'),
+  ('Point Spread'),
+  ('Total Points'),
+  ('Player Props')
+) AS m(name)
+WHERE s.sport_type = 'basketball'
+ON CONFLICT (sport_id, name) DO NOTHING;
+
+INSERT INTO betting_market (sport_id, name)
+SELECT s.sport_id, m.name FROM sport s
+CROSS JOIN (VALUES
+  ('Moneyline'),
+  ('Point Spread'),
+  ('Total Points'),
+  ('Player Props')
+) AS m(name)
+WHERE s.sport_type = 'american_football'
+ON CONFLICT (sport_id, name) DO NOTHING;
+
+-- Outcomes for Football 1X2
 INSERT INTO betting_outcome (market_id, name)
 SELECT m.market_id, v.name FROM (
   SELECT 'Home' AS name UNION ALL SELECT 'Draw' UNION ALL SELECT 'Away'
 ) v
 JOIN betting_market m ON m.name = '1X2'
+JOIN sport s ON s.sport_id = m.sport_id AND s.sport_type = 'football'
 ON CONFLICT (market_id, name) DO NOTHING;
 
--- Outcomes for Over/Under
+-- Outcomes for Football Over/Under Goals
 INSERT INTO betting_outcome (market_id, name)
 SELECT m.market_id, v.name FROM (
   SELECT 'Over' AS name UNION ALL SELECT 'Under'
 ) v
-JOIN betting_market m ON m.name = 'Over/Under'
+JOIN betting_market m ON m.name = 'Over/Under Goals'
+JOIN sport s ON s.sport_id = m.sport_id AND s.sport_type = 'football'
 ON CONFLICT (market_id, name) DO NOTHING;
 
--- Outcomes for Asian Handicap (side only; line captured in match_odd.handicap)
+-- Outcomes for Basketball/American Football Moneyline
 INSERT INTO betting_outcome (market_id, name)
 SELECT m.market_id, v.name FROM (
   SELECT 'Home' AS name UNION ALL SELECT 'Away'
 ) v
-JOIN betting_market m ON m.name = 'Asian Handicap'
+JOIN betting_market m ON m.name = 'Moneyline'
+JOIN sport s ON s.sport_id = m.sport_id AND s.sport_type IN ('basketball', 'american_football')
+ON CONFLICT (market_id, name) DO NOTHING;
+
+-- Outcomes for Point Spread
+INSERT INTO betting_outcome (market_id, name)
+SELECT m.market_id, v.name FROM (
+  SELECT 'Home' AS name UNION ALL SELECT 'Away'
+) v
+JOIN betting_market m ON m.name = 'Point Spread'
+JOIN sport s ON s.sport_id = m.sport_id AND s.sport_type IN ('basketball', 'american_football')
+ON CONFLICT (market_id, name) DO NOTHING;
 ON CONFLICT (market_id, name) DO NOTHING;
 
 -- Migration 0003_seed_geo_assoc.sql
@@ -838,13 +1201,15 @@ CREATE TABLE IF NOT EXISTS external_id_map (
 );
 CREATE INDEX IF NOT EXISTS idx_external_id_map_entity ON external_id_map(entity_type, entity_id);
 
--- Team/Player Stats
+-- Team/Player Stats (Enhanced with JSONB for flexible storage)
 CREATE TABLE IF NOT EXISTS team_match_stats (
   team_match_stats_id SERIAL PRIMARY KEY,
   match_id INT NOT NULL REFERENCES match(match_id) ON DELETE CASCADE,
   team_id INT NOT NULL REFERENCES team(team_id) ON DELETE CASCADE,
   provider provider_enum NOT NULL,
+  -- Common stats across sports
   possession NUMERIC(5,2),
+  -- Football specific stats
   shots_total INT,
   shots_on_target INT,
   corners INT,
@@ -854,7 +1219,16 @@ CREATE TABLE IF NOT EXISTS team_match_stats (
   passes_completed INT,
   xg NUMERIC(6,3),
   xa NUMERIC(6,3),
-  metrics_extra JSONB,
+  -- Flexible sport-specific metrics
+  football_stats JSONB, -- {crosses: 12, tackles: 18, clearances: 25, free_kicks: 8}
+  basketball_stats JSONB, -- {field_goals: 45, three_pointers: 12, free_throws: 18, rebounds: 42}
+  american_football_stats JSONB, -- {passing_yards: 285, rushing_yards: 142, turnovers: 2, sacks: 3}
+  -- Advanced analytics (all sports)
+  advanced_metrics JSONB, -- {expected_possession: 52.3, pressure_index: 7.2, tempo: 65}
+  -- Formation and tactics
+  formation TEXT,
+  tactical_analysis JSONB, -- {pressing_intensity: 8.1, defensive_line: 45.2, width: 72}
+  -- Audit fields
   source_url TEXT,
   scraped_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -869,19 +1243,46 @@ CREATE TABLE IF NOT EXISTS player_match_stats (
   player_id INT NOT NULL REFERENCES player(player_id) ON DELETE CASCADE,
   team_id INT REFERENCES team(team_id) ON DELETE SET NULL,
   provider provider_enum NOT NULL,
+  -- Basic performance data
   minutes INT,
+  position_played TEXT, -- Position actually played during the match
+  -- Football/Soccer specific stats
   shots_total INT,
   shots_on_target INT,
+  goals INT DEFAULT 0,
+  assists INT DEFAULT 0,
   xg NUMERIC(6,3),
   xa NUMERIC(6,3),
   passes INT,
   passes_completed INT,
+  key_passes INT,
+  progressive_passes INT,
   tackles INT,
   interceptions INT,
   clearances INT,
   dribbles_completed INT,
   duels_won INT,
-  metrics_extra JSONB,
+  yellows INT DEFAULT 0,
+  reds INT DEFAULT 0,
+  fouls_committed INT,
+  fouls_drawn INT,
+  -- Basketball specific stats (stored in JSONB for flexibility)
+  basketball_stats JSONB, -- {points: 24, rebounds: 8, assists: 6, steals: 2, blocks: 1, turnovers: 3, field_goals_made: 9, field_goals_attempted: 15, three_pointers_made: 3, three_pointers_attempted: 7, free_throws_made: 3, free_throws_attempted: 4}
+  -- American Football specific stats  
+  american_football_stats JSONB, -- {passing_yards: 285, rushing_yards: 45, receiving_yards: 95, touchdowns: 2, interceptions: 1, fumbles: 0, tackles: 8, sacks: 1}
+  -- Performance ratings and grades
+  rating NUMERIC(4,2), -- Provider's rating (1-10 scale typically)
+  grade TEXT, -- Letter grade or performance level
+  -- Physical performance data
+  distance_covered NUMERIC(8,2),
+  top_speed NUMERIC(5,2),
+  sprints INT,
+  -- Heat map and positioning
+  average_position JSONB, -- {x: 45.2, y: 32.8} average position on field/court
+  heat_map_data JSONB, -- Detailed positioning data throughout match
+  -- Flexible storage for additional metrics
+  advanced_metrics JSONB, -- Provider-specific or sport-specific advanced stats
+  -- Audit fields
   source_url TEXT,
   scraped_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -981,60 +1382,8 @@ DO $$ BEGIN
 END $$;
 
 -- Migration 0005_enhancements.sql
--- Extra player_match_stats fields
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name='player_match_stats' AND column_name='key_passes'
-  ) THEN
-    ALTER TABLE player_match_stats ADD COLUMN key_passes INT;
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name='player_match_stats' AND column_name='progressive_passes'
-  ) THEN
-    ALTER TABLE player_match_stats ADD COLUMN progressive_passes INT;
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name='player_match_stats' AND column_name='yellows'
-  ) THEN
-    ALTER TABLE player_match_stats ADD COLUMN yellows INT;
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name='player_match_stats' AND column_name='reds'
-  ) THEN
-    ALTER TABLE player_match_stats ADD COLUMN reds INT;
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name='player_match_stats' AND column_name='fouls_committed'
-  ) THEN
-    ALTER TABLE player_match_stats ADD COLUMN fouls_committed INT;
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name='player_match_stats' AND column_name='fouls_drawn'
-  ) THEN
-    ALTER TABLE player_match_stats ADD COLUMN fouls_drawn INT;
-  END IF;
-END $$;
+-- Enhanced tables are now part of the main schema definition
+-- This section is kept for migration compatibility
 
 -- Goalkeeper match stats
 CREATE TABLE IF NOT EXISTS goalkeeper_match_stats (
