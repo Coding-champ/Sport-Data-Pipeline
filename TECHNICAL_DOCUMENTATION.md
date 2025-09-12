@@ -110,6 +110,49 @@ src/
     └── health.py                # Health Checks
 ```
 
+## 🖥️ CLI und Verwaltung
+
+### Modulare CLI-Schnittstelle
+Das System bietet eine einheitliche CLI für verschiedene Operationen:
+
+```bash
+# Einmalige Scraping-Läufe
+python -m src.apps.cli run-once --jobs all
+python -m src.apps.cli run-once --jobs flashscore
+python -m src.apps.cli run-once --jobs odds transfermarkt
+python -m src.apps.cli run-once --jobs fbref
+
+# Scheduler für begrenzte Zeit
+python -m src.apps.cli schedule --duration-minutes 10
+
+# Verfügbare Scraper anzeigen
+python -m src.apps.cli scrapers
+```
+
+### Run-Modi Konfiguration
+Über die Umgebungsvariable `RUN_MODE` oder `Settings.run_mode`:
+
+- **`interactive`**: CLI-Menü im Prozess
+- **`api_only`**: Nur FastAPI starten
+- **`collection_once`**: Ein Datensammlungszyklus und beenden
+- **`analytics_once`**: Einmalige Analytics-Routine
+- **`full_service`**: API und Background-Scheduler starten
+
+### Operative Scripts
+```bash
+# Database Diagnostics
+python -m scripts.db_diagnostics
+
+# API Health Smoke Test
+python scripts/api_health_smoke.py
+
+# Scraper Testing
+python scripts/test_scraper.py
+
+# Development Debugging
+python scripts/simple_debug.py
+```
+
 ## 🛠️ Verwendete Software und Frameworks
 
 ### Backend-Framework

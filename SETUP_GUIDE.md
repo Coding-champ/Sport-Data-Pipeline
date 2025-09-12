@@ -406,6 +406,60 @@ pre-commit install
 pre-commit run --all-files
 ```
 
+### Development Tools Configuration (pyproject.toml)
+```toml
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "I",   # isort
+  "UP",  # pyupgrade
+]
+```
+
+### Windows PowerShell Setup
+Für Windows-Entwickler gibt es einen automatisierten Setup-Script:
+```powershell
+# Automatisiertes Setup (empfohlen)
+powershell -ExecutionPolicy Bypass -File scripts/setup_tests.ps1
+
+# Was das Script macht:
+# - Virtual Environment erstellen
+# - Dependencies installieren
+# - Playwright Browser installieren
+# - Development Tools konfigurieren
+# - Pre-commit Hooks einrichten
+```
+
+### Nützliche Development Scripts
+Das Repository enthält hilfreiche Scripts im `scripts/` Verzeichnis:
+```bash
+# Database Diagnostics
+python scripts/db_diagnostics.py
+
+# API Health Check
+python scripts/api_health_smoke.py
+
+# Scraper Testing
+python scripts/test_scraper.py
+python scripts/test_courtside_scraper.py
+
+# Development Debugging
+python scripts/simple_debug.py
+python scripts/courtside_debug.py
+```
+
 ### Testing Setup
 ```bash
 # Tests ausführen
