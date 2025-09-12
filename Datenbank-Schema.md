@@ -4,12 +4,68 @@
 
 Dieses Dokument beschreibt das Datenmodell der Sport-Data-Pipeline, die für die Verwaltung von Sportdaten für Fußball, Basketball und American Football entwickelt wurde. Das Schema nutzt PostgreSQL als Datenbank und macht extensiven Gebrauch von JSONB für flexible Datenstrukturen.
 
+## Wichtige Verbesserungen gegenüber dem ursprünglichen Schema
+
+### 1. Multi-Sport-Architektur
+- **Neue `sport` Tabelle**: Zentrale Definition der unterstützten Sportarten
+- **Sport-spezifische Referenzen**: Alle Hauptentitäten sind mit einer Sportart verknüpft
+- **Sportartspezifische Lookup-Tabellen**: Positionen, Wettmärkte und Regeln pro Sportart
+
+### 2. Erweiterte JSONB-Nutzung
+- **Flexible Spielerstatistiken**: Sport-spezifische Statistiken in `basketball_stats`, `american_football_stats` JSONB-Feldern
+- **Taktische Analysen**: `tactical_analysis` für erweiterte Team-Metriken
+- **Technologie-Integration**: `decision_result` für VAR- und andere Technologie-Entscheidungen
+- **Kommerzielle Daten**: Social Media, Sponsoring, Ausstattung in strukturierter Form
+
+### 3. Medizinische und Gesundheitsdaten
+- **Umfassende Verletzungsdokumentation**: `player_injury` mit Behandlungsplänen und medizinischen Berichten
+- **Fitness-Monitoring**: `player_fitness_record` für regelmäßige Gesundheitschecks
+- **Medizinisches Personal**: Erweiterte `medical_staff` Tabelle mit Lizenzen und Spezialisierungen
+
+### 4. Technologie-Integration
+- **VAR und Torlinientechnik**: `match_technology_data` für Technologie-Entscheidungen
+- **Spieler-Tracking**: `player_tracking_data` für GPS- und Leistungsdaten
+- **Erweiterte Venue-Ausstattung**: Technologie-Features in Spielstätten
+
+### 5. Nachwuchsförderung und Akademien
+- **Akademie-Level**: `academy_level` ENUM für Jugendmannschaften
+- **Hierarchische Team-Struktur**: `parent_team_id` für Verbindung zu Seniorenteams
+- **Nachwuchslaufbahn**: `youth_career` JSONB für Spielerentwicklung
+
+### 6. Erweiterte Wett- und Quotensysteme
+- **Live-Wetten**: Unterstützung für Live-Quoten mit Zeitstempel und aktuellem Spielstand
+- **Sport-spezifische Märkte**: Getrennte Wettmärkte für verschiedene Sportarten
+- **Erweiterte Quotenverfolgung**: Mehr Metadaten für Wettanbieter und Marktbedingungen
+
 ## Unterstützte Sportarten
 
 Das Schema unterstützt drei Hauptsportarten:
 - **Football** (Fußball/Soccer)
 - **Basketball** 
 - **American Football**
+
+## Normalisierung und Datenintegrität
+
+### Verbesserte Normalisierung
+
+1. **Lookup-Tabellen**: Alle wiederkehrenden Werte in separaten Tabellen (Positionen, Wetter, Event-Typen)
+2. **Sport-spezifische Normalisierung**: Getrennte Lookup-Tabellen pro Sportart vermeiden NULL-Werte
+3. **Hierarchische Strukturen**: Verbände, Teams und Clubs mit klaren Parent-Child Beziehungen
+4. **SCD2-Historisierung**: Zeitbasierte Verfolgung von Änderungen bei Namen und Eigenschaften
+
+### Datenintegrität-Regeln
+
+- **Referentielle Integrität**: Strikte Fremdschlüssel-Beziehungen
+- **Business Rules**: CHECK Constraints für Geschäftsregeln (Team-Club Beziehungen)
+- **UNIQUE Constraints**: Verhinderung von Duplikaten bei kritischen Kombinationen
+- **NOT NULL Constraints**: Pflichtfelder für essenzielle Daten
+
+### Denormalisierung für Performance
+
+Strategische Denormalisierung wurde in folgenden Bereichen angewendet:
+- **JSONB-Felder**: Für flexible, häufig zusammen abgefragte Daten
+- **Berechnete Spalten**: `is_current` Felder für aktuelle Datensätze
+- **Redundante Referenzen**: Sport-ID in mehreren Tabellen für effiziente Filterung
 
 ## Schema-Architektur
 
