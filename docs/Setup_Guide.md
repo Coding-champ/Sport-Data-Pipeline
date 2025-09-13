@@ -2,26 +2,13 @@
 
 ## 📋 Systemvoraussetzungen und Installation
 
-### Mindestanforderungen
-
-#### Hardware
-- **CPU**: 4 Cores (empfohlen: 8+ Cores für Produktionsumgebung)
-- **RAM**: 8 GB (empfohlen: 16+ GB für Analytics-Workloads)
-- **Storage**: 50 GB freier Speicherplatz (SSD empfohlen)
-- **Netzwerk**: Stabile Internetverbindung (min. 10 Mbit/s)
-
-#### Software-Voraussetzungen
+### Software-Voraussetzungen
 - **Python**: 3.09+ (empfohlen: 3.10+)
 - **PostgreSQL**: 15+ mit JSONB-Support
 - **Redis**: 6.0+ für Caching und Message Broker
 - **Docker**: 20.10+ (optional, aber empfohlen)
 - **Docker Compose**: 2.0+ (für Container-Setup)
 - **Git**: Für Repository-Verwaltung
-
-#### Betriebssystem-Support
-- ✅ **Linux**: Ubuntu 20.04+, CentOS 8+, Debian 11+
-- ✅ **macOS**: macOS 11+ (Intel/Apple Silicon)
-- ✅ **Windows**: Windows 10/11 mit WSL2 empfohlen
 
 ## 🐋 Setup-Szenario 1: Docker Compose (Empfohlen für Entwicklung)
 
@@ -184,70 +171,6 @@ docker-compose down -v
 
 ### Schritt 1: System-Dependencies installieren
 
-#### Ubuntu/Debian
-```bash
-# System aktualisieren
-sudo apt update && sudo apt upgrade -y
-
-# Python 3.09+ installieren
-sudo apt install python3.10 python3.10-venv python3.10-dev python3-pip -y
-
-# PostgreSQL installieren
-sudo apt install postgresql-15 postgresql-contrib-15 -y
-
-# Redis installieren
-sudo apt install redis-server -y
-
-# Weitere Dependencies
-sudo apt install git curl wget build-essential libpq-dev -y
-
-# Chrome für Web Scraping (optional)
-wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
-sudo apt update
-sudo apt install google-chrome-stable -y
-```
-
-#### CentOS/RHEL
-```bash
-# System aktualisieren
-sudo dnf update -y
-
-# Python 3.09+ installieren
-sudo dnf install python3.10 python3.10-pip python3.10-devel -y
-
-# PostgreSQL installieren
-sudo dnf install postgresql15-server postgresql15 -y
-sudo postgresql-15-setup initdb
-sudo systemctl enable postgresql-15
-sudo systemctl start postgresql-15
-
-# Redis installieren
-sudo dnf install redis -y
-sudo systemctl enable redis
-sudo systemctl start redis
-
-# Development Tools
-sudo dnf groupinstall "Development Tools" -y
-sudo dnf install libpq-devel -y
-```
-
-#### macOS
-```bash
-# Homebrew installieren (falls nicht vorhanden)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Dependencies installieren
-brew install python@3.10 postgresql@15 redis git
-
-# Services starten
-brew services start postgresql@15
-brew services start redis
-
-# Chrome installieren
-brew install --cask google-chrome
-```
-
 ### Schritt 2: Datenbanken konfigurieren
 
 #### PostgreSQL Setup
@@ -320,7 +243,6 @@ nano .env
 ```bash
 # Schema-Dateien ausführen
 psql postgresql://sportsuser:securepassword@localhost:5432/sportsdata -f schema.sql
-psql postgresql://sportsuser:securepassword@localhost:5432/sportsdata -f sports_database_schema.sql
 
 # Oder über Python
 python -c "
@@ -441,6 +363,51 @@ powershell -ExecutionPolicy Bypass -File scripts/setup_tests.ps1
 # - Development Tools konfigurieren
 # - Pre-commit Hooks einrichten
 ```
+
+This will:
+
+- Create `.venv/` if missing.
+- `pip install -r requirements.txt` (if present), and ensure `pytest` + `playwright` are installed.
+- Install Playwright browsers (`python -m playwright install`).
+- Install dev tools (`pre-commit`, `ruff`, `black`, `isort`) and `pre-commit install`.
+
+### Script options
+
+```powershell
+# Skip creating venv
+powershell -ExecutionPolicy Bypass -File scripts/setup_tests.ps1 -CreateVenv:$false
+
+# Skip installing Playwright browsers
+powershell -ExecutionPolicy Bypass -File scripts/setup_tests.ps1 -InstallBrowsers:$false
+
+# Skip dev tool installation
+powershell -ExecutionPolicy Bypass -File scripts/setup_tests.ps1 -InstallDevTools:$false
+
+# Use a specific Python interpreter
+powershell -ExecutionPolicy Bypass -File scripts/setup_tests.ps1 -PythonExe "C:\\Python310\\python.exe"
+```
+
+## Running tests
+
+Use the developer helper for common tasks:
+
+```powershell
+# Run all tests
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Task test
+
+# Run a specific test file (quiet)
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Task test -PyTestArgs "tests/test_utils.py -q"
+```
+
+## Formatting & linting
+
+```powershell
+# Format (isort -> black -> ruff --fix)
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Task format
+
+# Lint only
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Task lint
+
 
 ### Nützliche Development Scripts
 Das Repository enthält hilfreiche Scripts im `scripts/` Verzeichnis:
@@ -793,107 +760,6 @@ docker-compose -f docker-compose.prod.yml logs -f api
 docker-compose -f docker-compose.prod.yml ps
 ```
 
-## 🏥 Setup-Szenario 5: Kubernetes Deployment
-
-### Kubernetes Manifests
-
-#### deployment.yaml
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: sport-data-api
-  labels:
-    app: sport-data-api
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: sport-data-api
-  template:
-    metadata:
-      labels:
-        app: sport-data-api
-    spec:
-      containers:
-      - name: api
-        image: sport-data-api:latest
-        ports:
-        - containerPort: 8000
-        env:
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: sport-data-secrets
-              key: database-url
-        - name: REDIS_URL
-          valueFrom:
-            secretKeyRef:
-              name: sport-data-secrets
-              key: redis-url
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 5
-          periodSeconds: 5
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: sport-data-api-service
-spec:
-  selector:
-    app: sport-data-api
-  ports:
-  - protocol: TCP
-    port: 80
-    targetPort: 8000
-  type: LoadBalancer
-```
-
-#### configmap.yaml
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: sport-data-config
-data:
-  ENVIRONMENT: "production"
-  LOG_LEVEL: "INFO"
-  SCRAPING_ENABLED: "true"
-  ANALYTICS_ENABLED: "true"
-```
-
-### Deployment-Befehle
-```bash
-# Secrets erstellen
-kubectl create secret generic sport-data-secrets \
-  --from-literal=database-url="postgresql://user:pass@postgres:5432/db" \
-  --from-literal=redis-url="redis://redis:6379"
-
-# Deployment erstellen
-kubectl apply -f k8s/
-
-# Status prüfen
-kubectl get pods -l app=sport-data-api
-kubectl get services
-kubectl logs -l app=sport-data-api -f
-```
-
 ## 🔍 Troubleshooting
 
 ### Häufige Probleme und Lösungen
@@ -1114,4 +980,4 @@ echo "0 3 * * 0 /path/to/maintenance.sh" | crontab -
 
 ---
 
-*Dieser Setup Guide wird kontinuierlich erweitert und aktualisiert basierend auf Community-Feedback und neuen Features.*
+*Dieser Setup Guide wird kontinuierlich erweitert und aktualisiert.*

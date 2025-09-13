@@ -3,7 +3,7 @@
 ## 🏗️ Softwarearchitektur und Modulstruktur
 
 ### Überblick
-Die Sport Data Pipeline ist eine skalierbare, produktionstaugliche Plattform für die Sammlung, Analyse und Bereitstellung von Sportdaten. Das System folgt einer modularen Architektur mit klarer Trennung der Verantwortlichkeiten.
+Die Sport Data Pipeline ist eine Plattform für die Sammlung, Analyse und Bereitstellung von Sportdaten. Das System folgt einer modularen Architektur mit klarer Trennung der Verantwortlichkeiten.
 
 ### Architektur-Diagramm
 ```
@@ -36,16 +36,13 @@ Die Sport Data Pipeline ist eine skalierbare, produktionstaugliche Plattform fü
 ### Modulstruktur
 
 ```
-src/
-├── __init__.py                    # Haupt-Package
+src/                   # Haupt-Package
 ├── api/                          # FastAPI Anwendungsschicht
-│   ├── __init__.py
 │   ├── main.py                   # FastAPI App Configuration
 │   ├── dependencies.py           # Dependency Injection
 │   ├── models.py                 # Pydantic Request/Response Models
 │   ├── router.py                 # Router Aggregation
 │   └── endpoints/                # API Endpoints (modulare Router)
-│       ├── __init__.py
 │       ├── players.py            # Spieler-Endpoints
 │       ├── matches.py            # Spiel-Endpoints
 │       ├── teams.py              # Team-Endpoints
@@ -53,18 +50,14 @@ src/
 │       ├── analytics.py          # Analytics-Endpoints
 │       └── system.py             # System/Health-Endpoints
 ├── core/                         # Zentrale Konfiguration
-│   ├── __init__.py
 │   └── config.py                 # Pydantic Settings mit Env-Variablen
 ├── data_collection/              # Datensammlung
-│   ├── __init__.py
-│   ├── orchestrator.py          # Koordiniert alle Datensammler
+│   ├── orchestrator.py           # Koordiniert alle Datensammler
 │   ├── collectors/              # API-basierte Datensammler
-│   │   ├── __init__.py
 │   │   ├── base.py              # Abstract Base Collector
 │   │   ├── football_data_api_collector.py  # Football-data.org
 │   │   └── betfair_odds_collector.py       # Betfair Exchange
 │   └── scrapers/                # Web-Scraping Module
-│       ├── __init__.py
 │       ├── base.py              # Abstract Base Scraper
 │       ├── scraping_orchestrator.py       # Scraper Koordination
 │       ├── transfermarkt_scraper.py       # Transfermarkt
@@ -74,19 +67,15 @@ src/
 │       ├── courtside_scraper.py           # Courtside Basketball
 │       └── [weitere Scraper...]
 ├── analytics/                    # Machine Learning & Analytics
-│   ├── __init__.py
 │   ├── engine.py                # Analytics Engine
 │   ├── models/                  # ML-Modelle
-│   │   ├── __init__.py
 │   │   ├── player_performance.py
 │   │   ├── match_prediction.py
 │   │   └── market_analysis.py
 │   └── reports/                 # Report Generation
-│       ├── __init__.py
 │       ├── player_reports.py
 │       └── league_reports.py
-├── database/                     # Datenbankschicht
-│   ├── __init__.py
+├── database/                    # Datenbankschicht
 │   ├── manager.py               # Database Manager
 │   ├── schema.py                # SQLAlchemy Models
 │   └── services/                # Data Access Layer
@@ -95,20 +84,32 @@ src/
 │       ├── matches.py           # Spiel-Services
 │       ├── teams.py             # Team-Services
 │       └── odds.py              # Wett-Services
-├── domain/                       # Domain Models
-│   ├── __init__.py
+├── domain/                      # Domain Models
 │   ├── entities/                # Business Entities
 │   └── value_objects/           # Value Objects
-├── common/                       # Gemeinsame Utilities
-│   ├── __init__.py
+├── common/                      # Gemeinsame Utilities
 │   ├── http.py                  # HTTP Client mit Anti-Detection
 │   ├── logging.py               # Strukturiertes Logging
 │   └── exceptions.py            # Custom Exceptions
-└── monitoring/                   # Monitoring & Metriken
-    ├── __init__.py
+└── monitoring/                  # Monitoring & Metriken
     ├── metrics.py               # Prometheus Metriken
     └── health.py                # Health Checks
 ```
+
+## 🔧 Konfiguration und Umgebungsvariablen
+
+### Zentrale Konfiguration
+Alle Einstellungen werden über `src/core/config.py` mit Pydantic Settings verwaltet und können über Umgebungsvariablen überschrieben werden.
+
+### Wichtige Konfigurationsbereiche
+- **Database**: PostgreSQL-Verbindung, Pool-Größe
+- **Redis**: Caching und Message Broker
+- **API**: Host, Port, CORS, Authentifizierung
+- **Scraping**: Intervalle, Anti-Detection, Timeouts
+- **Analytics**: Model-Updates, Cache-Strategien
+- **Monitoring**: Metriken, Health Checks, Logging
+
+---
 
 ## 🖥️ CLI und Verwaltung
 
@@ -254,7 +255,6 @@ GET    /api/v1/matches/{id}/stats         # Spielstatistiken
 #### Wett-Daten (`/api/v1/odds`)
 ```http
 GET    /api/v1/odds/matches/{id}          # Quoten für Spiel
-GET    /api/v1/odds/live                  # Live-Quoten
 GET    /api/v1/odds/compare               # Quoten-Vergleich
 GET    /api/v1/odds/value                 # Value-Bets
 ```
@@ -433,9 +433,9 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 | Kategorie | Frequenz | Datenquellen |
 |-----------|----------|--------------|
 | **Live-Scores** | 30 Sekunden | Flashscore, SofaScore |
-| **Live-Quoten** | 5 Minuten | Bet365, Betfair, BetExplorer |
+| **Wett-Quoten** | Täglich (2:00 AM) | Bet365, Betfair, BetExplorer |
 | **Spielerstatistiken** | Täglich (2:00 AM) | FBref, Transfermarkt, WhoScored |
-| **Transfers** | Alle 6 Stunden | Transfermarkt |
+| **Transfers** | Montags (20:00 PM) | Transfermarkt |
 | **Liga-Updates** | Täglich | Premier League, Football-data.org |
 | **Team-Daten** | Wöchentlich | Alle Quellen |
 
@@ -454,20 +454,12 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 - ✅ **Multi-Source Integration**: 12 aktive Datenquellen
 - ✅ **Anti-Detection Web Scraping**: Undetected Chrome, Header-Rotation
 - ✅ **API Integration**: Football-data.org, Betfair Exchange
-- ✅ **Live-Daten**: Echtzeit-Scores und Live-Quoten
+- ✅ **Live-Daten**: Echtzeit-Scores
 - ✅ **Automatisierte Sammlung**: Celery-basierte Background Jobs
 - ✅ **Fehlerbehandlung**: Retry-Logic mit exponential Backoff
 
-#### Analytics & Machine Learning
-- ✅ **Spieleranalyse**: Performance-Trends, Peer-Vergleiche
-- ✅ **Spielvorhersagen**: ML-basierte Outcome-Prediction
-- ✅ **Liga-Analytics**: Tabellenstände, Form-Analyse
-- ✅ **Transfer-Analyse**: Marktwert-Entwicklung, Transfer-Erfolg
-- ✅ **Report-Generation**: Automatisierte HTML/PDF-Reports
-
 #### API & Integration
 - ✅ **RESTful API**: FastAPI mit OpenAPI-Dokumentation
-- ✅ **Echtzeit-Endpoints**: Live-Match-Daten und Predictions
 - ✅ **Authentifizierung**: API-Key basierte Sicherheit
 - ✅ **Rate Limiting**: Schutz vor Überlastung
 - ✅ **CORS Support**: Web-Client Integration
@@ -480,24 +472,6 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 
 ### 🔄 Aktuell in Entwicklung (nächste 3 Monate)
 
-#### Erweiterte ML-Modelle
-- 🔄 **Neural Networks**: Deep Learning für präzisere Vorhersagen
-- 🔄 **Ensemble Methods**: Kombination mehrerer Modelle
-- 🔄 **Feature Engineering**: Erweiterte statistische Features
-- 🔄 **Model Versioning**: MLflow Integration
-
-#### Real-time Streaming
-- 🔄 **WebSocket API**: Echtzeit-Daten für Web-Clients
-- 🔄 **Event Streaming**: Kafka für Event-driven Architecture
-- 🔄 **Live Notifications**: Push-Benachrichtigungen
-- 🔄 **Stream Processing**: Apache Kafka Streams
-
-#### Enhanced Visualisation
-- 🔄 **Interactive Dashboards**: Erweiterte Plotly-Dashboards
-- 🔄 **Mobile-Responsive UI**: Progressive Web App
-- 🔄 **Custom Report Builder**: Drag & Drop Report-Erstellung
-- 🔄 **Data Export**: Erweiterte Export-Optionen (Excel, PowerBI)
-
 #### Performance Optimierungen
 - 🔄 **Database Sharding**: Horizontale Skalierung
 - 🔄 **Caching Strategy**: Redis Cluster, CDN Integration
@@ -506,8 +480,23 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 
 ### 📋 Geplante Features (6-12 Monate)
 
+#### Erweiterte ML-Modelle
+- 📋 **Neural Networks**: Deep Learning für präzisere Vorhersagen
+- 📋 **Ensemble Methods**: Kombination mehrerer Modelle
+- 📋 **Feature Engineering**: Erweiterte statistische Features
+- 📋 **Model Versioning**: MLflow Integration
+
+#### Real-time Streaming
+- 📋 **WebSocket API**: Echtzeit-Daten für Web-Clients
+- 📋 **Live Notifications**: Push-Benachrichtigungen
+
+#### Enhanced Visualisation
+- 📋 **Interactive Dashboards**: Erweiterte Plotly-Dashboards
+- 📋 **Mobile-Responsive UI**: Progressive Web App
+- 📋 **Custom Report Builder**: Report-Erstellung
+- 📋 **Data Export**: Erweiterte Export-Optionen (Excel, PowerBI)
+
 #### Zusätzliche Sportarten
-- 📋 **Tennis**: ATP/WTA Tour Integration
 - 📋 **Hockey**: NHL/European Hockey Integration
 - 📋 **Baseball**: MLB Statistics Integration
 - 📋 **eSports**: Gaming Tournament Data
@@ -517,12 +506,6 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 - 📋 **Lineup Optimization**: ML-optimierte Team-Aufstellungen
 - 📋 **Player Projections**: Fantasy Points Predictions
 - 📋 **Contest Analysis**: ROI-Optimierung
-
-#### Social Features
-- 📋 **User Accounts**: Personalisierte Dashboards
-- 📋 **Community Features**: Tipps, Kommentare, Bewertungen
-- 📋 **Following System**: Experten und Teams folgen
-- 📋 **Achievement System**: Gamification-Elemente
 
 #### Advanced Betting Analytics
 - 📋 **Arbitrage Detection**: Surebet-Finder
@@ -534,7 +517,6 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 - 📋 **Natural Language Generation**: Automated Match Reports
 - 📋 **Computer Vision**: Video Analysis Integration
 - 📋 **Sentiment Analysis**: Social Media Impact auf Quoten
-- 📋 **Predictive Maintenance**: System-Health Vorhersagen
 
 ### 💡 Zukünftige Innovationen (12+ Monate)
 
@@ -545,12 +527,8 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 
 #### Advanced AI
 - 💡 **Large Language Models**: ChatGPT-Integration für Queries
-- 💡 **Computer Vision**: Automatische Video-Analyse
-- 💡 **Reinforcement Learning**: Adaptive Betting-Strategien
 
 #### Mobile & IoT
-- 💡 **Native Mobile Apps**: iOS/Android Apps
-- 📋 **Wearable Integration**: Apple Watch/Fitness Tracker
 - 💡 **Stadium IoT**: Direkte Venue-Datenintegration
 
 #### Enterprise Features
@@ -558,19 +536,5 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 - 💡 **B2B API Marketplace**: Daten-as-a-Service
 - 💡 **Regulatory Compliance**: GDPR, CCPA, Gaming-Regulierung
 
-## 🔧 Konfiguration und Umgebungsvariablen
-
-### Zentrale Konfiguration
-Alle Einstellungen werden über `src/core/config.py` mit Pydantic Settings verwaltet und können über Umgebungsvariablen überschrieben werden.
-
-### Wichtige Konfigurationsbereiche
-- **Database**: PostgreSQL-Verbindung, Pool-Größe
-- **Redis**: Caching und Message Broker
-- **API**: Host, Port, CORS, Authentifizierung
-- **Scraping**: Intervalle, Anti-Detection, Timeouts
-- **Analytics**: Model-Updates, Cache-Strategien
-- **Monitoring**: Metriken, Health Checks, Logging
-
----
 
 *Diese technische Dokumentation wird kontinuierlich aktualisiert und erweitert.*

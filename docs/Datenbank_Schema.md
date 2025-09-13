@@ -66,26 +66,20 @@ Strategische Denormalisierung wurde in folgenden Bereichen angewendet:
 - **JSONB-Felder**: Für flexible, häufig zusammen abgefragte Daten
 - **Berechnete Spalten**: `is_current` Felder für aktuelle Datensätze
 - **Redundante Referenzen**: Sport-ID in mehreren Tabellen für effiziente Filterung
+- **Audit-Felder**: Jede Tabelle enthält Herkunft und Zeitstempel
 
 ## Schema-Architektur
-
-### Grundprinzipien
-
-1. **Multi-Sport-Unterstützung**: Jede Hauptentität ist mit einer Sportart verknüpft
-2. **Flexible Datenstruktung**: JSONB wird für sportspezifische Statistiken verwendet
-3. **Historisierung**: SCD2-Ansatz für sich ändernde Daten (Vereinsnamen, Stadionnamen)
-4. **Audit-Felder**: Jede Tabelle enthält Herkunft und Zeitstempel
-5. **Normalisierung**: Lookup-Tabellen für wiederkehrende Werte
-6. **Technologie-Integration**: Unterstützung für VAR, GPS-Tracking, etc.
 
 ## ENUM-Typen
 
 ### Kernsystem
 ```sql
 sport_enum: 'football', 'basketball', 'american_football'
-team_type: 'club', 'national', 'youth', 'women', 'academy'
+team_type: 'club', 'national'
+team_maturity: 'youth', 'senior'
+team_gender: 'men','women'
 strong_foot: 'left', 'right', 'both'
-surface_type: 'grass', 'hybrid', 'artificial', 'indoor', 'hardwood', 'turf'
+surface_type: 'grass', 'hybrid', 'artificial', 'indoor'
 ```
 
 ### Personal und Funktionen
@@ -102,7 +96,7 @@ absence_reason: 'injury', 'suspension', 'illness', 'national_duty', 'personal', 
 
 ### Technologie
 ```sql
-technology_type: 'var', 'goal_line', 'offside', 'gps', 'heart_rate', 'player_tracking'
+technology_type: 'var', 'goal_line', 'offside'
 ```
 
 ### Wettsystem
@@ -139,7 +133,6 @@ Sportvereine mit Multi-Sport-Unterstützung:
 
 #### `venue`
 Spielstätten mit erweiterten Funktionen:
-- Multi-Sport-Unterstützung (`supported_sports` JSONB)
 - Sportspezifische Abmessungen (`field_dimensions` JSONB)
 - Technologie-Ausstattung (VAR, Torlinientechnik)
 - Kapazitätsdetails (`capacity_details` JSONB)
@@ -149,22 +142,15 @@ Spielstätten mit erweiterten Funktionen:
 #### `team`
 Teams mit sportspezifischen Eigenschaften:
 - Verknüpfung zu `sport` und optional zu `club`
-- Nachwuchsförderung über `academy_level` und `parent_team_id`
 - Leistungsverfolgung (`current_form`, `season_objectives` JSONB)
 
 #### `player`
 Spieler mit umfassenden Profilen:
 - Sportspezifische Attribute (`sport_attributes` JSONB)
 - Nachwuchslaufbahn (`youth_career` JSONB)
-- Medizinische und Fitness-Daten
+- Medizinische Daten
 - Karrierestatistiken (`career_stats` JSONB)
 - Social Media Präsenz
-
-#### `staff_member` & `medical_staff`
-Erweiterte Personalverwaltung:
-- Qualifikationen und Zertifizierungen (JSONB)
-- Spezialisierungen und Sprachen
-- Medizinisches Personal mit Lizenzen
 
 ### 4. Wettbewerbe und Saisons
 
@@ -192,33 +178,7 @@ Flexible Ergebniserfassung:
 - Sportspezifische Punkteverteilung (`score_breakdown` JSONB)
 - Verschiedene Siegarten (`win_type`)
 
-### 6. Medizin und Gesundheit
-
-#### `player_injury`
-Umfassende Verletzungsdokumentation:
-- Behandlungsplan (`treatment_plan` JSONB)
-- Medizinische Berichte (`medical_reports` JSONB)
-- Verknüpfung zu medizinischem Personal
-
-#### `player_fitness_record`
-Fitness-Monitoring:
-- Fitnessdaten (`fitness_data` JSONB)
-- Regelmäßige Gesundheitschecks
-
-### 7. Technologie-Integration
-
-#### `match_technology_data`
-VAR, Torlinientechnik und andere Technologien:
-- Entscheidungsergebnisse (`decision_result` JSONB)
-- Vertrauenslevel der Technologie
-
-#### `player_tracking_data`
-GPS und Leistungsdaten:
-- Physische Metriken (Laufstrecke, Geschwindigkeit)
-- Positionsdaten
-- Leistungsmetriken (`performance_metrics` JSONB)
-
-### 8. Statistiken
+### 6. Statistiken
 
 #### `team_match_stats`
 Teamstatistiken mit sportspezifischen Daten:
@@ -237,7 +197,7 @@ Umfassende Spielerstatistiken:
 - Physische Leistungsdaten
 - Positionsdaten (`heat_map_data` JSONB)
 
-### 9. Wettsystem
+### 7. Wettsystem
 
 #### `betting_market` & `betting_outcome`
 Sportspezifische Wettmärkte:
@@ -246,9 +206,7 @@ Sportspezifische Wettmärkte:
 
 #### `match_odd`
 Erweiterte Quotenverfolgung:
-- Live-Wetten Unterstützung
 - Zeitstempel für Quotenentwicklung
-- Aktueller Spielstand bei Live-Quoten
 
 ## JSONB-Nutzung
 
@@ -308,9 +266,8 @@ Das Schema macht extensiven Gebrauch von JSONB für flexible Datenstrukturen:
 1. **Sport → Alle Hauptentitäten**: Jede Entität ist sportspezifisch
 2. **Club → Team → Player**: Hierarchische Vereinsstruktur
 3. **Competition → Season → Match**: Wettbewerbshierarchie
-4. **Match → Stats/Events**: Ein-zu-Viele Beziehungen für Spieldaten
-5. **Player → Injuries/Fitness**: Gesundheitsdaten-Tracking
-6. **Staff → Medical Staff**: Spezialisierung des Personals
+4. **Match → Stats/Events/Odds**: Ein-zu-Viele Beziehungen für Spieldaten
+5. **Player → Injuries**: Gesundheitsdaten-Tracking
 
 ### Referentielle Integrität:
 
@@ -341,8 +298,7 @@ Das Schema ist für zukünftige Erweiterungen konzipiert:
 
 1. **Neue Sportarten**: Einfache Erweiterung über `sport` Tabelle
 2. **Neue Statistiken**: JSONB-Felder für flexible Datenstrukturen
-3. **Neue Technologien**: Erweiterbares `technology_type` ENUM
-4. **Neue Märkte**: Sportspezifische Wettmärkte
+3. **Neue Märkte**: Sportspezifische Wettmärkte
 
 ## Best Practices für die Nutzung
 

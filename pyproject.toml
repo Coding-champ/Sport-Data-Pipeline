@@ -1,11 +1,11 @@
 [project]
 name = "sport-data-pipeline"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.09"
 
 [tool.black]
 line-length = 100
-target-version = ["py310"]
+target-version = ["py309"]
 
 [tool.isort]
 profile = "black"
@@ -14,7 +14,7 @@ known_first_party = ["src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py309"
 select = [
   "E",   # pycodestyle errors
   "F",   # pyflakes
@@ -27,9 +27,11 @@ ignore = [
 exclude = [
   ".venv",
   "node_modules",
-  "migrations",
+  "database",
   "reports",
   "logs",
+  "sources",
+  "docs",
 ]
 
 [tool.ruff.isort]
