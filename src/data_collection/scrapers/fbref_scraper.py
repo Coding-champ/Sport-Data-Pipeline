@@ -15,7 +15,7 @@ from src.core.config import Settings
 from src.data_collection.scrapers.base import BaseScraper, ScrapingConfig
 from src.common.playwright_utils import accept_consent
 from src.database.manager import DatabaseManager
-from src.domain.contracts import MatchRef
+from src.domain.models import MatchRef
 
 class FbrefScraper(BaseScraper):
     """Scraper for FBref match and club IDs from Premier League"""

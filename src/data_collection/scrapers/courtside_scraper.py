@@ -20,7 +20,7 @@ from src.common.playwright_utils import (
     extract_from_ld_json,
     normalize_game_node,
 )
-from src.domain.contracts import Fixture
+from src.domain.models import Fixture
 from src.database.manager import DatabaseManager
 
 

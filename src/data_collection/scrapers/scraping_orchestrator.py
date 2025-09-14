@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from src.core.config import Settings
-from src.domain.contracts import to_scraped_data_rows
+from src.domain.utils import to_scraped_data_rows
 from src.data_collection.scrapers.base import BaseScraper
 from src.database.manager import DatabaseManager
 from src.database.services.matches import upsert_matches

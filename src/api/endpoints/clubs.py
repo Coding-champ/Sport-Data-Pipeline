@@ -1,13 +1,15 @@
+
 """
 Clubs API Endpoints
-- Serves Bundesliga clubs stats scraped into reports/bundesliga_clubs.json
+- Liefert Clubs aus verschiedenen Ligen (z.B. Bundesliga, Premier League, etc.)
 """
 
 import json
 import os
 import time
+
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -17,18 +19,32 @@ from src.domain.models import Club
 router = APIRouter()
 
 # Default location can be overridden by env var
-_DEFAULT_JSON = Path(__file__).resolve().parents[3] / "reports" / "bundesliga_clubs.json"
-_JSON_PATH = Path(os.getenv("BUNDESLIGA_CLUBS_JSON", str(_DEFAULT_JSON)))
+
+# Mapping von Liga zu JSON-Datei
+_CLUBS_JSON_MAP = {
+    "bundesliga": Path(__file__).resolve().parents[3] / "reports" / "bundesliga_clubs.json",
+    "premierleague": Path(__file__).resolve().parents[3] / "reports" / "fbref" / "fbref_clubs_latest.json",
+    # Weitere Ligen können hier ergänzt werden
+}
+
+def _get_json_path(league: str) -> Path:
+    if league not in _CLUBS_JSON_MAP:
+        raise ValueError(f"Unsupported league: {league}")
+    return _CLUBS_JSON_MAP[league]
 
 
-def _load_clubs() -> list[dict[str, Any]]:
-    if not _JSON_PATH.exists():
-        raise FileNotFoundError(f"Not found: {_JSON_PATH}")
-    with open(_JSON_PATH, encoding="utf-8") as f:
+
+def _load_clubs(league: str) -> list[dict[str, Any]]:
+    path = _get_json_path(league)
+    if not path.exists():
+        raise FileNotFoundError(f"Not found: {path}")
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
+        # fbref: clubs liegen unter "items"
+        if isinstance(data, dict) and "items" in data:
+            data = data["items"]
         if not isinstance(data, list):
             raise ValueError("Invalid data format: expected a list of clubs")
-        # Validate each item via Pydantic Club model
         validated: list[dict[str, Any]] = []
         for item in data:
             try:
@@ -39,14 +55,16 @@ def _load_clubs() -> list[dict[str, Any]]:
         return validated
 
 
-@router.get("/clubs/bundesliga", response_model=APIResponse)
-async def list_bundesliga_clubs(
+
+@router.get("/clubs/{league}", response_model=APIResponse)
+async def list_clubs(
+    league: Literal["bundesliga", "premierleague"] = Query(..., description="Liga-Name, z.B. 'bundesliga', 'premierleague'"),
     matchday: Optional[int] = Query(default=None, ge=1, description="Optional filter by matchday"),
 ):
-    """List all Bundesliga clubs with optional matchday filter."""
+    """Listet alle Clubs einer Liga (z.B. Bundesliga, Premier League) mit optionalem Matchday-Filter."""
     t0 = time.time()
     try:
-        clubs = _load_clubs()
+        clubs = _load_clubs(league)
         if matchday is not None:
             clubs = [c for c in clubs if (c or {}).get("matchday") == matchday]
         return APIResponse(success=True, data=clubs, execution_time_ms=(time.time() - t0) * 1000)
@@ -54,18 +72,16 @@ async def list_bundesliga_clubs(
         return APIResponse(success=False, error=str(e), execution_time_ms=(time.time() - t0) * 1000)
 
 
-@router.get("/clubs/bundesliga/{club}", response_model=APIResponse)
-async def get_bundesliga_club(
-    club: str,
+
+@router.get("/clubs/{league}/{club}", response_model=APIResponse)
+async def get_club(
+    league: Literal["bundesliga", "premierleague"] = Query(..., description="Liga-Name, z.B. 'bundesliga', 'premierleague'"),
+    club: str = Query(..., description="Name oder Slug des Clubs"),
 ):
-    """Get a single club by name (case-insensitive substring) or exact URL slug.
-    Examples:
-    - club=\"bayern\" matches \"FC Bayern München\"
-    - club=\"fc-bayern-muenchen\" also matches via URL slug
-    """
+    """Gibt einen einzelnen Club einer Liga zurück (Name oder Slug, case-insensitive)."""
     t0 = time.time()
     try:
-        clubs = _load_clubs()
+        clubs = _load_clubs(league)
         key = club.strip().lower()
 
         def slug(s: str) -> str:

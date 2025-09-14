@@ -4,48 +4,38 @@ Database services for match-related persistence.
 
 from __future__ import annotations
 
-import hashlib
-
 from ..manager import DatabaseManager
+from src.domain.models import Match
 
 
 async def upsert_matches(db: DatabaseManager, data: list[dict]):
-    """Transform and upsert match-like dicts into 'live_scores' table.
-
-    Expects items with keys: home_team, away_team, scraped_at, and optional
-    home_score, away_score, status, match_time.
+    """Validiert und upsertet Match-Objekte in die 'matches'-Tabelle.
+    Erwartet eine Liste von dicts, die mit dem Match-Pydantic-Modell kompatibel sind.
     """
     if not data:
         return
 
-    processed = []
-    for item in data:
-        # TODO: Normalize field names. Some scrapers use 'home'/'away' or 'home_team_name'/'away_team_name'.
-        home = item.get("home_team") or item.get("home") or item.get("home_team_name")
-        away = item.get("away_team") or item.get("away") or item.get("away_team_name")
-        if not (home and away and item.get("scraped_at")):
-            # TODO: Consider logging/metrics for dropped records.
-            continue
-        # Stable external id: sha1 of home|away|date
-        id_src = f"{home}|{away}|{item['scraped_at'].date()}".encode()
-        external_id = hashlib.sha1(id_src).hexdigest()
-        processed.append(
-            {
-                "external_id": external_id,
-                "home_team_name": home,
-                "away_team_name": away,
-                "home_score": item.get("home_score"),
-                "away_score": item.get("away_score"),
-                "status": item.get("status", "scheduled"),
-                "match_time": item.get("match_time", ""),
-                "source": item.get("source", "flashscore"),
-                "created_at": item["scraped_at"],
-            }
-        )
+    matches = [Match(**item) for item in data]
+    processed = [
+        {
+            "id": m.match_id if hasattr(m, "match_id") else None,
+            "season": m.season,
+            "home_team_id": m.home_team_id,
+            "away_team_id": m.away_team_id,
+            "venue": m.venue.id if m.venue else None,
+            "status": m.status.value if hasattr(m.status, "value") else m.status,
+            "result": m.result.dict() if m.result else None,
+            "external_ids": m.external_ids,
+            "source_url": str(m.source_url) if m.source_url else None,
+            "created_at": None,
+            "updated_at": None,
+        }
+        for m in matches
+    ]
 
     if processed:
         await db.bulk_insert(
-            "live_scores",
+            "matches",
             processed,
-            "(external_id) DO UPDATE SET home_score = EXCLUDED.home_score, away_score = EXCLUDED.away_score, status = EXCLUDED.status, updated_at = CURRENT_TIMESTAMP",
+            "(id) DO UPDATE SET status = EXCLUDED.status, updated_at = CURRENT_TIMESTAMP",
         )
