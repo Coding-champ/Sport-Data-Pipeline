@@ -17,6 +17,7 @@ from src.database.manager import DatabaseManager
 from src.database.services.matches import upsert_matches
 from src.database.services.odds import upsert_odds
 from src.database.services.players import upsert_players
+from src.database.services.bundesliga import upsert_bundesliga_matches
 
 
 class ScrapingOrchestrator:
@@ -115,6 +116,13 @@ class ScrapingOrchestrator:
         elif routing_type == "odds":
             # Delegate to centralized DB service for odds
             await upsert_odds(self.db_manager, data)
+        elif routing_type == "bundesliga_matches":
+            # Bundesliga direct persistence (requires season/matchday metadata)
+            # Try to infer season/matchday from first item or default
+            if data:
+                season = data[0].get("season") or "2025-2026"
+                matchday = int(data[0].get("matchday") or 1)
+                await upsert_bundesliga_matches(self.db_manager, season, matchday, data)
         else:
             # Generic storage for new scrapers like 'fbref', 'courtside1891'
             await self._save_generic_data(scraper_name, data)

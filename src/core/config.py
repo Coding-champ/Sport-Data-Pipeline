@@ -61,6 +61,7 @@ class Settings(BaseSettings):
         "odds": "odds",              # Use upsert_odds service
         "fbref": "generic",          # Use generic scraped_data table
         "courtside1891": "generic",  # Use generic scraped_data table
+        "bundesliga": "bundesliga_matches",      # Route Bundesliga scraper to direct match persistence
         "bet365": "odds",            # Use upsert_odds service
     }
     
