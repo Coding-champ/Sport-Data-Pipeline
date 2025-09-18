@@ -1,3 +1,17 @@
+"""
+Domain models for validated sports data using Pydantic.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from enum import Enum
+from typing import Union, Optional
+
+from pydantic import AwareDatetime, BaseModel, Field, HttpUrl, field_validator
+
+Number = Union[int, float]
+
 # --- Spielbetrieb, Ereignisse, Statistiken, Transfers, Odds, Trophäen, Mappings ---
 
 class MatchResultTable(BaseModel):
@@ -312,19 +326,6 @@ class BettingOutcome(BaseModel):
     outcome_id: Optional[int] = None
     market_id: int
     outcome_name: str
-"""
-Domain models for validated sports data using Pydantic.
-"""
-
-from __future__ import annotations
-
-from datetime import date
-from enum import Enum
-from typing import Union, Optional
-
-from pydantic import AwareDatetime, BaseModel, Field, HttpUrl, field_validator
-
-Number = Union[int, float]
 
 # Stammdaten-Modelle gemäß schema.sql
 class Sport(BaseModel):
