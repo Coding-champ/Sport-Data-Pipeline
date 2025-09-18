@@ -58,8 +58,11 @@ MOCK_CLUB_HTML = """
 MOCK_SQUAD_HTML = """
 <html>
 <body>
+    <h1>Team Squad</h1>
     <div class="squad-list">
-        {player_links}
+        <table class="squad-table">
+            {player_links}
+        </table>
     </div>
 </body>
 </html>
@@ -169,9 +172,9 @@ async def mock_fetch_page(url: str, method: str = "GET", data: dict = None, use_
     for club_id, club_info in CLUB_DATA.items():
         if club_id in url:
             if '/squad' in url:
-                # Squad page
+                # Squad page - create table rows with proper indicators
                 player_links = '\n'.join([
-                    f'<a href="/de/bundesliga/spieler/{player[0]}">{player[1]}</a>'
+                    f'<tr><td><a href="/de/bundesliga/spieler/{player[0]}">{player[1]}</a></td><td>{player[2]}, #{player[3]}</td></tr>'
                     for player in club_info['players']
                 ])
                 return MOCK_SQUAD_HTML.format(player_links=player_links)

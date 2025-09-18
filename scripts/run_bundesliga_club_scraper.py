@@ -97,7 +97,7 @@ async def main():
         logger.info(f"Found {len(clubs)} clubs")
         
         results = {
-            'clubs': [club.dict() for club in clubs],
+            'clubs': [club.model_dump() for club in clubs],
             'squads': {},
             'players': {},
             'scraping_stats': {
@@ -151,7 +151,7 @@ async def main():
                         player = await scraper.scrape_player(player_url)
                         
                         if player:
-                            club_players.append(player.dict())
+                            club_players.append(player.model_dump())
                             player_count += 1
                             
                             # Log progress every 10 players

@@ -393,51 +393,96 @@ class BundesligaClubScraper(BaseScraper):
         """Extract player profile URLs from squad page"""
         links = set()
         
-        # First, try to find player links within specific squad/roster containers
-        squad_containers = soup.find_all(['div', 'section', 'ul', 'table'], 
-                                       class_=re.compile(r'(squad|roster|player|team|lineup|kader|mannschaft)', re.I))
+        # Strategy 1: Look for very specific squad indicators first
+        # Check if this page actually looks like a squad page
+        page_text = soup.get_text().lower()
+        if not any(indicator in page_text for indicator in ['squad', 'team', 'kader', 'mannschaft', 'aufstellung', 'spieler']):
+            self.logger.warning(f"Page doesn't appear to be a squad page: {base_url}")
+            return []
         
-        if squad_containers:
-            # Look within squad containers first
-            for container in squad_containers:
-                for a in container.find_all('a', href=True):
-                    href = a['href']
-                    if re.search(r'/de/bundesliga/spieler/[a-z0-9\-]+', href):
+        # Strategy 2: Look for player links in structured contexts only
+        # Focus on table rows, list items, and specific card structures
+        structured_containers = soup.find_all(['tr', 'li', 'article'])
+        
+        for container in structured_containers:
+            # Only consider containers that have player-like content
+            container_text = container.get_text().lower()
+            
+            # Skip if container doesn't have player indicators
+            if not any(indicator in container_text for indicator in [
+                '#', 'position', 'pos', 'alter', 'age', 'nationality', 'nationalität', 
+                'torwart', 'verteidiger', 'mittelfeld', 'stürmer', 'goalkeeper', 'defender', 'midfielder', 'forward'
+            ]):
+                continue
+                
+            # Look for player links within this structured container
+            player_links = container.find_all('a', href=True)
+            for a in player_links:
+                href = a['href']
+                if re.search(r'/de/bundesliga/spieler/[a-z0-9\-]+', href):
+                    # Additional validation: check if link text looks like a player name
+                    link_text = a.get_text(strip=True)
+                    if link_text and len(link_text.split()) >= 2:  # At least first and last name
                         full_url = urljoin(base_url, href)
                         links.add(full_url)
         
-        # If no squad containers found or no links within them, fall back to a more targeted approach
+        # Strategy 3: If no structured containers, look for direct player links with context
         if not links:
-            # Look for player links that are likely to be in squad context
-            # This includes links with player names in nearby text or within list items
-            for a in soup.find_all('a', href=True):
-                href = a['href']
+            self.logger.info(f"No structured player containers found, trying contextual approach for {base_url}")
+            
+            # Find all player links and validate them by context
+            all_player_links = soup.find_all('a', href=re.compile(r'/de/bundesliga/spieler/[a-z0-9\-]+'))
+            
+            for a in all_player_links:
+                # Check surrounding context for squad indicators
+                # Look at parent and sibling elements
+                context_elements = []
                 
-                if re.search(r'/de/bundesliga/spieler/[a-z0-9\-]+', href):
-                    # Check if the link is within a list item, table row, or card-like structure
-                    parent = a.find_parent(['li', 'tr', 'div'])
+                # Check parent elements up to 3 levels
+                parent = a.parent
+                for _ in range(3):
                     if parent:
-                        # Check if parent contains player-like info (name, number, position indicators)
-                        parent_text = parent.get_text().lower()
-                        # Look for indicators this is actually a player listing
-                        if any(indicator in parent_text for indicator in ['#', 'position', 'pos', 'age', 'nationality']):
-                            full_url = urljoin(base_url, href)
-                            links.add(full_url)
-        
-        # If still no links found, use the original broad approach but with a warning
-        if not links:
-            self.logger.warning(f"No squad-specific containers found, using broad search for {base_url}")
-            for a in soup.find_all('a', href=True):
-                href = a['href']
-                if re.search(r'/de/bundesliga/spieler/[a-z0-9\-]+', href):
-                    full_url = urljoin(base_url, href)
+                        context_elements.append(parent)
+                        parent = parent.parent
+                    else:
+                        break
+                
+                # Check siblings
+                if a.parent:
+                    context_elements.extend(a.parent.find_all(['span', 'div', 'p'], limit=5))
+                
+                # Analyze context
+                context_text = ' '.join([elem.get_text().lower() for elem in context_elements])
+                
+                # Strong indicators this is a squad member
+                squad_indicators = ['#', 'nr.', 'nummer', 'position', 'alter', 'age', 'nationality', 'nationalität']
+                weak_indicators = ['team', 'kader', 'squad']
+                
+                if any(indicator in context_text for indicator in squad_indicators):
+                    full_url = urljoin(base_url, a['href'])
+                    links.add(full_url)
+                elif any(indicator in context_text for indicator in weak_indicators) and len(links) < 50:
+                    # Only add if we haven't found too many already
+                    full_url = urljoin(base_url, a['href'])
                     links.add(full_url)
         
-        # Log if we found an unusually high number of players (likely indicates over-broad matching)
-        if len(links) > 50:
-            self.logger.warning(f"Found {len(links)} player links for squad page - this seems too high and may indicate over-broad matching")
+        # Final validation and limits
+        links_list = sorted(list(links))
         
-        return sorted(list(links))
+        # Apply reasonable limits
+        if len(links_list) > 100:
+            self.logger.warning(f"Found {len(links_list)} player links - applying aggressive filtering")
+            # Keep only the first 50 (they're sorted, so likely more relevant)
+            links_list = links_list[:50]
+        elif len(links_list) > 50:
+            self.logger.warning(f"Found {len(links_list)} player links - this seems high but within limits")
+        
+        if len(links_list) == 0:
+            self.logger.warning(f"No player links found on squad page: {base_url}")
+        else:
+            self.logger.info(f"Found {len(links_list)} player links on squad page")
+        
+        return links_list
     
     def _parse_player_data(self, soup: BeautifulSoup, url: str) -> Optional[EnhancedPlayer]:
         """Parse player data from individual player page"""

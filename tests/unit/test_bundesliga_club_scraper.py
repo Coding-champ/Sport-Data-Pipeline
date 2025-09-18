@@ -75,11 +75,21 @@ class TestBundesligaClubScraper:
         return """
         <html>
         <body>
-            <div class="squad-list">
-                <a href="/de/bundesliga/spieler/manuel-neuer">Manuel Neuer</a>
-                <a href="/de/bundesliga/spieler/thomas-mueller">Thomas Müller</a>
-                <a href="/de/bundesliga/spieler/joshua-kimmich">Joshua Kimmich</a>
-            </div>
+            <h1>Team Squad</h1>
+            <table>
+                <tr>
+                    <td><a href="/de/bundesliga/spieler/manuel-neuer">Manuel Neuer</a></td>
+                    <td>GK, #1</td>
+                </tr>
+                <tr>
+                    <td><a href="/de/bundesliga/spieler/thomas-mueller">Thomas Müller</a></td>
+                    <td>FW, #25</td>
+                </tr>
+                <tr>
+                    <td><a href="/de/bundesliga/spieler/joshua-kimmich">Joshua Kimmich</a></td>
+                    <td>MF, #6</td>
+                </tr>
+            </table>
         </body>
         </html>
         """
@@ -90,6 +100,7 @@ class TestBundesligaClubScraper:
         return """
         <html>
         <body>
+            <h1>Club Squad</h1>
             <!-- Navigation with many player links -->
             <nav class="main-nav">
                 <a href="/de/bundesliga/spieler/random-player-1">Random Player 1</a>
@@ -97,21 +108,21 @@ class TestBundesligaClubScraper:
                 <!-- Many more navigation links... -->
             </nav>
             
-            <!-- Actual squad section -->
-            <div class="squad-list">
-                <div class="player-card">
-                    <a href="/de/bundesliga/spieler/manuel-neuer">Manuel Neuer</a>
-                    <span>GK, #1</span>
-                </div>
-                <div class="player-card">
-                    <a href="/de/bundesliga/spieler/thomas-mueller">Thomas Müller</a>
-                    <span>FW, #25</span>
-                </div>
-                <div class="player-card">
-                    <a href="/de/bundesliga/spieler/joshua-kimmich">Joshua Kimmich</a>
-                    <span>MF, #6</span>
-                </div>
-            </div>
+            <!-- Actual squad section with proper indicators -->
+            <table class="squad-table">
+                <tr>
+                    <td><a href="/de/bundesliga/spieler/manuel-neuer">Manuel Neuer</a></td>
+                    <td>GK, #1, Age: 37</td>
+                </tr>
+                <tr>
+                    <td><a href="/de/bundesliga/spieler/thomas-mueller">Thomas Müller</a></td>
+                    <td>FW, #25, Age: 34</td>
+                </tr>
+                <tr>
+                    <td><a href="/de/bundesliga/spieler/joshua-kimmich">Joshua Kimmich</a></td>
+                    <td>MF, #6, Age: 28</td>
+                </tr>
+            </table>
             
             <!-- Footer with more random links -->
             <footer>
