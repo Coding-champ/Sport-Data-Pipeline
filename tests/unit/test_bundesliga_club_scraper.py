@@ -84,6 +84,43 @@ class TestBundesligaClubScraper:
         </html>
         """
     
+    @pytest.fixture
+    def sample_squad_html_with_noise(self):
+        """Sample HTML from squad page with many extraneous player links"""
+        return """
+        <html>
+        <body>
+            <!-- Navigation with many player links -->
+            <nav class="main-nav">
+                <a href="/de/bundesliga/spieler/random-player-1">Random Player 1</a>
+                <a href="/de/bundesliga/spieler/random-player-2">Random Player 2</a>
+                <!-- Many more navigation links... -->
+            </nav>
+            
+            <!-- Actual squad section -->
+            <div class="squad-list">
+                <div class="player-card">
+                    <a href="/de/bundesliga/spieler/manuel-neuer">Manuel Neuer</a>
+                    <span>GK, #1</span>
+                </div>
+                <div class="player-card">
+                    <a href="/de/bundesliga/spieler/thomas-mueller">Thomas Müller</a>
+                    <span>FW, #25</span>
+                </div>
+                <div class="player-card">
+                    <a href="/de/bundesliga/spieler/joshua-kimmich">Joshua Kimmich</a>
+                    <span>MF, #6</span>
+                </div>
+            </div>
+            
+            <!-- Footer with more random links -->
+            <footer>
+                <a href="/de/bundesliga/spieler/another-random">Another Random</a>
+            </footer>
+        </body>
+        </html>
+        """
+    
     @pytest.fixture  
     def sample_player_html(self):
         """Sample HTML from player page"""
@@ -156,6 +193,23 @@ class TestBundesligaClubScraper:
         assert "https://www.bundesliga.com/de/bundesliga/spieler/manuel-neuer" in links
         assert "https://www.bundesliga.com/de/bundesliga/spieler/thomas-mueller" in links  
         assert "https://www.bundesliga.com/de/bundesliga/spieler/joshua-kimmich" in links
+
+    def test_extract_player_links_filters_noise(self, scraper, sample_squad_html_with_noise):
+        """Test that player link extraction filters out extraneous links and focuses on squad"""
+        soup = BeautifulSoup(sample_squad_html_with_noise, 'html.parser')
+        base_url = "https://www.bundesliga.com/de/bundesliga/clubs/fc-bayern-muenchen/squad"
+        
+        links = scraper._extract_player_links(soup, base_url)
+        
+        # Should only find the 3 actual squad members, not the navigation links
+        assert len(links) == 3
+        assert "https://www.bundesliga.com/de/bundesliga/spieler/manuel-neuer" in links
+        assert "https://www.bundesliga.com/de/bundesliga/spieler/thomas-mueller" in links
+        assert "https://www.bundesliga.com/de/bundesliga/spieler/joshua-kimmich" in links
+        
+        # Should NOT include navigation or footer links
+        assert "https://www.bundesliga.com/de/bundesliga/spieler/random-player-1" not in links
+        assert "https://www.bundesliga.com/de/bundesliga/spieler/another-random" not in links
 
     def test_extract_player_basic_info(self, scraper, sample_player_html):
         """Test extraction of basic player information"""

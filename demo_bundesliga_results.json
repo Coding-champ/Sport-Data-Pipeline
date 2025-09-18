@@ -13,7 +13,7 @@
       "colors": null,
       "source_url": "https://www.bundesliga.com/de/bundesliga/clubs/bayer-leverkusen",
       "squad_url": "https://www.bundesliga.com/de/bundesliga/clubs/bayer-leverkusen/squad",
-      "scraped_at": "2025-09-18 18:02:24.237790+00:00",
+      "scraped_at": "2025-09-18 18:53:48.746216+00:00",
       "external_ids": {
         "bundesliga_url": "https://www.bundesliga.com/de/bundesliga/clubs/bayer-leverkusen"
       }
@@ -31,7 +31,7 @@
       "colors": null,
       "source_url": "https://www.bundesliga.com/de/bundesliga/clubs/borussia-dortmund",
       "squad_url": "https://www.bundesliga.com/de/bundesliga/clubs/borussia-dortmund/squad",
-      "scraped_at": "2025-09-18 18:02:25.584991+00:00",
+      "scraped_at": "2025-09-18 18:53:51.363791+00:00",
       "external_ids": {
         "bundesliga_url": "https://www.bundesliga.com/de/bundesliga/clubs/borussia-dortmund"
       }
@@ -49,7 +49,7 @@
       "colors": null,
       "source_url": "https://www.bundesliga.com/de/bundesliga/clubs/fc-bayern-muenchen",
       "squad_url": "https://www.bundesliga.com/de/bundesliga/clubs/fc-bayern-muenchen/squad",
-      "scraped_at": "2025-09-18 18:02:27.869974+00:00",
+      "scraped_at": "2025-09-18 18:53:52.563757+00:00",
       "external_ids": {
         "bundesliga_url": "https://www.bundesliga.com/de/bundesliga/clubs/fc-bayern-muenchen"
       }
@@ -67,7 +67,7 @@
       "colors": null,
       "source_url": "https://www.bundesliga.com/de/bundesliga/clubs/rb-leipzig",
       "squad_url": "https://www.bundesliga.com/de/bundesliga/clubs/rb-leipzig/squad",
-      "scraped_at": "2025-09-18 18:02:29.551265+00:00",
+      "scraped_at": "2025-09-18 18:53:54.751763+00:00",
       "external_ids": {
         "bundesliga_url": "https://www.bundesliga.com/de/bundesliga/clubs/rb-leipzig"
       }
@@ -118,7 +118,7 @@
         },
         "career_stats": [],
         "source_url": "https://www.bundesliga.com/de/bundesliga/spieler/florian-wirtz",
-        "scraped_at": "2025-09-18 18:02:31.888071+00:00",
+        "scraped_at": "2025-09-18 18:53:57.759949+00:00",
         "external_ids": {
           "bundesliga_url": "https://www.bundesliga.com/de/bundesliga/spieler/florian-wirtz"
         }
@@ -159,7 +159,7 @@
         },
         "career_stats": [],
         "source_url": "https://www.bundesliga.com/de/bundesliga/spieler/erling-haaland",
-        "scraped_at": "2025-09-18 18:02:31.990821+00:00",
+        "scraped_at": "2025-09-18 18:53:57.862892+00:00",
         "external_ids": {
           "bundesliga_url": "https://www.bundesliga.com/de/bundesliga/spieler/erling-haaland"
         }
@@ -198,7 +198,7 @@
         },
         "career_stats": [],
         "source_url": "https://www.bundesliga.com/de/bundesliga/spieler/marco-reus",
-        "scraped_at": "2025-09-18 18:02:32.093675+00:00",
+        "scraped_at": "2025-09-18 18:53:57.965607+00:00",
         "external_ids": {
           "bundesliga_url": "https://www.bundesliga.com/de/bundesliga/spieler/marco-reus"
         }
