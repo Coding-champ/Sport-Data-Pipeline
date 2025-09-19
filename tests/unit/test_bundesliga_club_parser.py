@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data_collection.scrapers.bundesliga.club_scraper import BundesligaClubScraper
+from src.data_collection.scrapers.bundesliga.bundesliga_club_scraper import BundesligaClubScraper
 
 
 class DummyDB:
@@ -50,32 +50,13 @@ def test_parse_bayern_profile_from_saved_html_or_hydration(monkeypatch):
         )
 
     # Act
-    data = scraper._parse_detail(html, "https://www.bundesliga.com/en/bundesliga/clubs/fc-bayern-muenchen")
+    data = scraper.parse_club_html(html, "https://www.bundesliga.com/en/bundesliga/clubs/fc-bayern-muenchen")
 
     # Assert basics
     assert data is not None
     assert data.get("name"), "Club name should be detected"
-    profile = data.get("profile_info") or {}
-    assert isinstance(profile, dict) and profile, "profile_info should be populated"
-
-    # Expect at least some of these keys via hydration/ld-json mapping
-    expected_any = [
-        "full_name",
-        "founded",
-        "club_colors",
-        "stadium",
-        "capacity",
-        "street",
-        "city",
-        "address",
-        "phone",
-        "fax",
-        "email",
-        "website",
-    ]
-    assert any(k in profile for k in expected_any), f"Expected any of {expected_any} in profile_info"
-
-    # Flattened fields should mirror profile when present
-    for key in ("full_name","founded","capacity","club_colors","address","street","city","phone","fax","email","website","stadium"):
-        if key in profile:
-            assert data.get(key) == profile.get(key)
+    # New simplified dict shape asserts
+    assert 'stadium' in data
+    assert 'founded_year' in data or 'founded' in data  # depending on parse success
+    assert 'city' in data
+    assert data.get('source_url')

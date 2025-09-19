@@ -8,7 +8,7 @@ from datetime import date, datetime
 from unittest.mock import Mock, AsyncMock, patch
 from bs4 import BeautifulSoup
 
-from src.data_collection.scrapers.bundesliga_club_scraper import (
+from src.data_collection.scrapers.bundesliga.bundesliga_club_scraper import (
     BundesligaClubScraper,
     EnhancedClub,
     EnhancedPlayer,
