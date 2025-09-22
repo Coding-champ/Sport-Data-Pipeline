@@ -120,7 +120,14 @@ class TermMapper:
     def __contains__(self, value: str) -> bool:  # pragma: no cover - small convenience
         return self.lookup(value) is not None
 
-__all__ = ["TermMapper"]
+def normalize_text(value: str) -> str:
+    """Public wrapper used by other modules for consistent normalisation.
+
+    Exposed instead of duplicating accent/punct/whitespace logic in multiple modules.
+    """
+    return _base_normalize(value)
+
+__all__ = ["TermMapper", "normalize_text"]
 
 
 # =============================================================================

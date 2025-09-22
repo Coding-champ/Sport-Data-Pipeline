@@ -328,6 +328,31 @@ class AnalyticsEngine:
 
         return analysis
 
+    async def get_top_performers(self, season: str, limit: int = 20) -> pd.DataFrame:
+        """Liefert DataFrame der Top-Performer (Goals + Assists) einer Saison.
+
+        Separate Utility damit Reports & Daily Tasks keinen SQL-Duplikat halten.
+        """
+        query = f"""
+        SELECT 
+            p.first_name || ' ' || p.last_name as player_name,
+            t.name as team_name,
+            sps.goals,
+            sps.assists,
+            sps.matches_played,
+            (sps.goals + sps.assists) as goal_contributions,
+            CASE WHEN sps.matches_played > 0 THEN sps.goals::float / sps.matches_played ELSE 0 END as goals_per_match
+        FROM players p
+        JOIN season_player_stats sps ON p.id = sps.player_id
+        JOIN teams t ON sps.team_id = t.id
+        WHERE sps.season = $1
+        AND sps.matches_played >= 10
+        ORDER BY goal_contributions DESC
+        LIMIT {int(limit)}
+        """
+        df = await self.load_data(query, cache_key=f"top_perf_{season}")
+        return df
+
     async def predict_match_outcome(
         self, home_team_id: int, away_team_id: int, season: str = None
     ) -> dict[str, Any]:

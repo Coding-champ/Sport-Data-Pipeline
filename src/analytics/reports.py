@@ -283,6 +283,43 @@ class ReportGenerator:
 
         return pyo.plot(fig, output_type="div", include_plotlyjs=False)
 
+    # ------------------------------------------------------------------
+    # Generic helpers
+    # ------------------------------------------------------------------
+    def _save_html(self, filename: str, content: str) -> str:
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write(content)
+            self.logger.info(f"Saved report: {filename}")
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"Failed to save {filename}: {e}")
+        return filename
+
+    async def generate_top_performers_report(self, season: str, limit: int = 20) -> dict[str, Any]:
+        """Erstellt HTML Report der Top-Performer einer Saison.
+
+        Diese Funktion ersetzt die frühere private Implementierung in
+        `SportsAnalyticsApp` und reduziert Code-Duplikation.
+        """
+        df = await self.analytics.get_top_performers(season, limit=limit)
+        if df.empty:
+            return {"error": "No data"}
+        html = [
+            "<html><head><title>Top Performers Report</title></head><body>",
+            f"<h1>Top Performers - Season {season}</h1>",
+            "<table border='1'>",
+            "<tr><th>Player</th><th>Team</th><th>Goals</th><th>Assists</th><th>Contributions</th><th>Goals/Match</th></tr>",
+        ]
+        for _, r in df.iterrows():
+            html.append(
+                f"<tr><td>{r['player_name']}</td><td>{r['team_name']}</td><td>{r['goals']}</td><td>{r['assists']}</td><td>{r['goal_contributions']}</td><td>{r['goals_per_match']:.2f}</td></tr>"
+            )
+        html.append("</table></body></html>")
+        content = "".join(html)
+        filename = f"{self.settings.report_output_path}/top_performers_{season}_{datetime.now().strftime('%Y%m%d')}.html"
+        self._save_html(filename, content)
+        return {"file": filename, "rows": len(df), "season": season}
+
     async def generate_transfer_analysis(self) -> dict[str, Any]:
         """Erstellt Transfer-Markt Analyse"""
 

@@ -1,6 +1,13 @@
 import random
 import time
-from typing import Any, Optional
+import os
+from typing import Any, Optional, Iterable, Sequence, Callable
+
+try:  # Optional playwright dependency isolation
+    from common.playwright_utils import BrowserSession, RenderWait  # type: ignore
+except Exception:  # pragma: no cover - optional path
+    BrowserSession = None  # type: ignore
+    RenderWait = None  # type: ignore
 
 import requests
 
@@ -144,3 +151,79 @@ def fetch_json(
                 print(f"Attempt {attempt} failed (json): {e} -> sleep {sleep_s:.2f}s")
             time.sleep(sleep_s)
     raise RuntimeError("unreachable")
+
+
+# ---------------------------------------------------------------------------
+# Unified helper for conditional Playwright render with graceful fallback
+# (used by multiple lightweight CLI scrapers). Kept here to avoid another
+# small utility module; depends only on existing imports.
+# ---------------------------------------------------------------------------
+def render_or_fetch(
+    url: str,
+    *,
+    args: Any,
+    default_wait_selectors: Optional[Sequence[str]] = None,
+) -> str:
+    """Render a page with Playwright if args.render is true, otherwise plain HTTP.
+
+    Falls back to HTTP fetch on any rendering exception. Keeps side‑effects and
+    argument names consistent across small scraper entry points. The *args*
+    object is an argparse Namespace (duck-typed) providing the following fields:
+        - render, render_wait_selector, render_wait_text, render_wait_network_idle,
+          render_headful, render_timeout, proxy, timeout, retries, backoff,
+          verbose, ua_file, ua_rotate, force_ua_on_429, no_header_randomize,
+          pre_jitter
+    """
+    if getattr(args, "render", False) and BrowserSession and RenderWait:
+        try:
+            # Build wait conditions
+            raw_selectors = getattr(args, "render_wait_selector", "") or ""
+            wait_selectors = [s.strip() for s in raw_selectors.split(",") if s.strip()] or list(
+                default_wait_selectors or []
+            )
+            raw_texts = getattr(args, "render_wait_text", "") or ""
+            wait_texts = [t.strip() for t in raw_texts.split(",") if t.strip()]
+            wait = RenderWait(
+                selectors=wait_selectors or None,
+                text_contains=wait_texts or None,
+                network_idle=getattr(args, "render_wait_network_idle", False),
+            )
+            if getattr(args, "verbose", False):
+                print(
+                    f"[render] {url} wait selectors={wait_selectors} text={wait_texts} network_idle={getattr(args,'render_wait_network_idle', False)}"
+                )
+            ua_pool = (
+                open(args.ua_file, encoding="utf-8").read().splitlines()
+                if getattr(args, "ua_file", None) and getattr(args, "ua_file") and os.path.exists(args.ua_file)
+                else DEFAULT_UAS
+            )
+            ua = random.choice(ua_pool) if getattr(args, "ua_rotate", False) else ua_pool[0]
+            with BrowserSession(
+                headless=not getattr(args, "render_headful", False),
+                user_agent=ua,
+                proxy=getattr(args, "proxy", None),
+                default_timeout_s=getattr(args, "render_timeout", 35.0),
+            ) as bs:  # type: ignore
+                return bs.render_page(url, wait=wait, timeout_s=getattr(args, "render_timeout", 35.0))
+        except Exception as e:  # noqa: BLE001
+            if getattr(args, "verbose", False):
+                print(f"[render->fallback] {e}")
+            # fall through to plain fetch
+    # Plain HTTP
+    return fetch_html(
+        url,
+        timeout=getattr(args, "timeout", 45.0),
+        retries=getattr(args, "retries", 3),
+        backoff=getattr(args, "backoff", 1.5),
+        proxy=getattr(args, "proxy", None),
+        verbose=getattr(args, "verbose", False),
+        user_agents=(
+            open(args.ua_file, encoding="utf-8").read().splitlines()
+            if getattr(args, "ua_file", None) and getattr(args, "ua_file") and os.path.exists(args.ua_file)
+            else DEFAULT_UAS
+        ),
+        rotate_ua=getattr(args, "ua_rotate", False),
+        force_ua_on_429=getattr(args, "force_ua_on_429", False),
+        header_randomize=not getattr(args, "no_header_randomize", False),
+        pre_jitter=getattr(args, "pre_jitter", 0.0),
+    )

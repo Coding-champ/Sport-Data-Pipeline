@@ -2,6 +2,7 @@ import re
 from datetime import datetime
 
 from bs4 import BeautifulSoup
+from typing import Optional
 
 # Date formats seen commonly across sources
 DATE_FORMATS = [
@@ -13,21 +14,21 @@ DATE_FORMATS = [
 ]
 
 
-def clean_text(s: str | None) -> str | None:
+def clean_text(s: Optional[str]) -> Optional[str]:
     if s is None:
         return None
     s = re.sub(r"\s+", " ", s.strip())
     return s or None
 
 
-def parse_int(s: str | None) -> int | None:
+def parse_int(s: Optional[str]) -> Optional[int]:
     if not s:
         return None
     m = re.search(r"-?\d+", s.replace(".", ""))
     return int(m.group(0)) if m else None
 
 
-def parse_decimal(s: str | None) -> float | None:
+def parse_decimal(s: Optional[str]) -> Optional[float]:
     if not s:
         return None
     s = s.replace(" ", "").replace(",", ".")
@@ -35,7 +36,7 @@ def parse_decimal(s: str | None) -> float | None:
     return float(m.group(0)) if m else None
 
 
-def parse_date(s: str | None) -> datetime.date | None:
+def parse_date(s: Optional[str]):  # -> Optional[datetime.date] (avoids forward ref for <3.10)
     if not s:
         return None
     s = clean_text(s)
@@ -51,7 +52,7 @@ def soup_from_html(html: str) -> BeautifulSoup:
     return BeautifulSoup(html, "html.parser")
 
 
-def extract_tm_player_id_from_href(href: str | None) -> str | None:
+def extract_tm_player_id_from_href(href: Optional[str]) -> Optional[str]:
     # Examples: /spieler/35616/..., /profile/player/35616
     if not href:
         return None

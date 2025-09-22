@@ -1,18 +1,28 @@
-"""
-DEPRECATED: Use src.database.manager.DatabaseManager instead.
+"""DEPRECATED database helper (legacy synchronous helpers).
 
-This module remains for backward compatibility with older scripts. New code should
-import and use `DatabaseManager` for both sync and async access.
+Use `src.database.manager.DatabaseManager` instead. This module will be removed
+after the deprecation grace period. All new code MUST migrate.
+
+Runtime behaviour:
+ - Import emits a `DeprecationWarning` (once per process)
+ - Functions still operate but print a stderr warning on connection open
 """
 
 import os
 import re
+import warnings
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Optional, Tuple, Dict
 
 import psycopg2
 
-# Load .env if present to populate DATABASE_URL for scripts
+warnings.warn(
+    "src.common.db is deprecated; migrate to src.database.manager.DatabaseManager",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+# Load .env if present to populate DATABASE_URL for scripts (legacy convenience)
 try:
     from dotenv import find_dotenv, load_dotenv  # type: ignore
 
@@ -48,7 +58,7 @@ def get_conn():
         conn.close()
 
 
-def query_one(conn, sql: str, params: tuple[Any, ...] | None = None) -> dict[str, Any] | None:
+def query_one(conn, sql: str, params: Optional[Tuple[Any, ...]] = None) -> Optional[Dict[str, Any]]:
     with conn.cursor() as cur:
         cur.execute(sql, params or ())
         row = cur.fetchone()
@@ -59,12 +69,12 @@ def query_one(conn, sql: str, params: tuple[Any, ...] | None = None) -> dict[str
         return dict(zip(cols, row))
 
 
-def execute(conn, sql: str, params: tuple[Any, ...] | None = None) -> None:
+def execute(conn, sql: str, params: Optional[Tuple[Any, ...]] = None) -> None:
     with conn.cursor() as cur:
         cur.execute(sql, params or ())
 
 
-def find_player_id_by_transfermarkt(conn, tm_player_id: str) -> int | None:
+def find_player_id_by_transfermarkt(conn, tm_player_id: str) -> Optional[int]:
     row = query_one(
         conn,
         """
@@ -84,12 +94,12 @@ def upsert_player_absence(
     *,
     player_id: int,
     absence_type: str,
-    reason: str | None,
-    start_date: str | None,  # ISO date string 'YYYY-MM-DD'
-    end_date: str | None,  # ISO date string
-    expected_return_date: str | None,  # ISO
-    missed_games: int | None,
-    source_url: str | None,
+    reason: Optional[str],
+    start_date: Optional[str],  # ISO date string 'YYYY-MM-DD'
+    end_date: Optional[str],  # ISO date string
+    expected_return_date: Optional[str],  # ISO
+    missed_games: Optional[int],
+    source_url: Optional[str],
 ) -> None:
     # No UNIQUE in schema; emulate by merging on (player_id, absence_type, start_date, reason)
     with conn.cursor() as cur:

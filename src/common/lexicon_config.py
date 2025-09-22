@@ -32,23 +32,17 @@ import json
 import threading
 import unicodedata
 import re
+from .term_mapper import normalize_text as _tm_normalize  # reuse shared normalization
 
 try:  # optional yaml
     import yaml  # type: ignore
 except Exception:  # pragma: no cover
     yaml = None  # type: ignore
 
-_WS_RE = re.compile(r"\s+")
-_PUNCT_RE = re.compile(r"[\.,;:_/\\()+\-\[\]{}]+")
+_WS_RE = re.compile(r"\s+")  # retained only for backwards compatibility if needed
 
-def _strip_accents(v: str) -> str:
-    return ''.join(c for c in unicodedata.normalize('NFKD', v) if not unicodedata.combining(c))
-
-def _norm(v: str) -> str:
-    v = _strip_accents(v.lower().strip())
-    v = _PUNCT_RE.sub(' ', v)
-    v = _WS_RE.sub(' ', v).strip()
-    return v
+def _norm(v: str) -> str:  # thin adapter
+    return _tm_normalize(v)
 
 @dataclass
 class LexiconConfig:

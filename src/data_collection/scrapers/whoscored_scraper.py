@@ -7,8 +7,7 @@ import sys
 import time
 from time import perf_counter
 
-from common.http import DEFAULT_UAS, fetch_html, fetch_json
-from common.playwright_utils import BrowserSession, RenderWait  # type: ignore
+from common.http import DEFAULT_UAS, fetch_json, render_or_fetch
 
 # NOTE: WhoScored is highly dynamic and uses JSON/XHR endpoints behind the scenes.
 # Using shared HTTP utilities from common/http.py; in practice prefer JSON endpoints or Playwright when needed.
@@ -26,51 +25,8 @@ def _pick_ua(args) -> str:
         return DEFAULT_UAS[0]
 
 
-def _render_or_fetch(url: str, args) -> str:
-    if getattr(args, "render", False):
-        ua = _pick_ua(args)
-        wait_selectors = [
-            s.strip() for s in (args.render_wait_selector or "").split(",") if s.strip()
-        ]
-        wait_texts = [t.strip() for t in (args.render_wait_text or "").split(",") if t.strip()]
-        wait = RenderWait(
-            selectors=wait_selectors or None,
-            text_contains=wait_texts or None,
-            network_idle=args.render_wait_network_idle,
-        )
-        if args.verbose:
-            print(
-                f"[render] {url} wait selectors={wait_selectors} text={wait_texts} network_idle={args.render_wait_network_idle}"
-            )
-        try:
-            with BrowserSession(
-                headless=not args.render_headful,
-                user_agent=ua,
-                proxy=args.proxy,
-                default_timeout_s=args.render_timeout,
-            ) as bs:
-                return bs.render_page(url, wait=wait, timeout_s=args.render_timeout)
-        except Exception as e:
-            if args.verbose:
-                print(f"[render->fallback] {e}")
-            # fall back to HTTP fetch
-    return fetch_html(
-        url,
-        timeout=args.timeout,
-        retries=args.retries,
-        backoff=args.backoff,
-        proxy=args.proxy,
-        verbose=args.verbose,
-        user_agents=(
-            open(args.ua_file, encoding="utf-8").read().splitlines()
-            if args.ua_file and os.path.exists(args.ua_file)
-            else DEFAULT_UAS
-        ),
-        rotate_ua=args.ua_rotate,
-        force_ua_on_429=args.force_ua_on_429,
-        header_randomize=(not args.no_header_randomize),
-        pre_jitter=args.pre_jitter,
-    )
+def _render_or_fetch(url: str, args) -> str:  # backward shim; delegates
+    return render_or_fetch(url, args=args)
 
 
 def process_one(args):

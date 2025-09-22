@@ -77,13 +77,14 @@ class Settings(BaseSettings):
     enable_betfair_collector: bool = True
 
     # Analytics
-    analytics_enabled: bool = True
+    analytics_enabled: bool = True  # canonical flag
     model_update_interval_hours: int = 24
     model_storage_path: str = "./models/"
     report_output_path: str = "./reports/"
     cache_duration_hours: int = 24
     min_matches_for_prediction: int = 10
     feature_importance_threshold: float = 0.01
+    current_season: str = "2024-25"  # zentral definierte aktuelle Saison
 
     # Monitoring
     log_level: str = "INFO"
@@ -97,7 +98,8 @@ class Settings(BaseSettings):
 
     # Feature Flags
     enable_data_collection: bool = True
-    enable_analytics: bool = True
+    # Deprecated duplicate of analytics_enabled; kept as property below
+    enable_analytics: bool = True  # will be overridden by property for backward compat
     enable_api: bool = True
     enable_scheduled_collection: bool = True
     enable_scheduled_analytics: bool = True
@@ -132,6 +134,16 @@ class Settings(BaseSettings):
         "protected_namespaces": ("settings_",),
     }
 
+    # Backward compatibility: prefer analytics_enabled
+    @property
+    def enable_analytics(self) -> bool:  # type: ignore[override]
+        return self.analytics_enabled
+
+    @enable_analytics.setter
+    def enable_analytics(self, value: bool) -> None:  # type: ignore[override]
+        # Accept writes but map onto analytics_enabled
+        self.analytics_enabled = value
+
 
 class APIConfig:
     """Konfiguration für externe APIs"""
@@ -153,5 +165,18 @@ class APIConfig:
         self.endpoints = endpoints
 
 
-# Global Settings Instance
-settings = Settings()
+# Lazy global settings accessor to avoid premature instantiation during CLI aggregation / testing
+_SETTINGS_SINGLETON: Optional[Settings] = None
+
+def get_settings() -> Settings:
+    global _SETTINGS_SINGLETON
+    if _SETTINGS_SINGLETON is None:
+        _SETTINGS_SINGLETON = Settings()
+    return _SETTINGS_SINGLETON
+
+# Backwards compatibility: keep name `settings` but as a proxy object
+class _SettingsProxy:
+    def __getattr__(self, item):  # pragma: no cover - simple delegation
+        return getattr(get_settings(), item)
+
+settings = _SettingsProxy()

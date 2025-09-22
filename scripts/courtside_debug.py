@@ -1,238 +1,215 @@
-"""
-Debug script for Courtside1891 scraper
+"""Unified Courtside1891 debug & analysis CLI.
+
+Modi (via --mode):
+  minimal  - schneller Check: wartet auf Fixtures, Screenshot + HTML Dump
+  fixtures - extrahiert strukturierte Fixture Daten als JSON
+  analyze  - tiefe Analyse (Container, Fixture-Elemente, data-testid, Ressourcen)
+  inspect  - Kurz-Inspektion (erste Elemente & Selektor Counts)
+  snapshot - Nur Screenshot + HTML
+  raw      - reiner HTML Dump
+
+Beispiele:
+  python scripts/courtside_debug.py --mode minimal --headless
+  python scripts/courtside_debug.py --mode fixtures --json > fixtures.json
+  python scripts/courtside_debug.py --mode analyze --out-dir reports/courtside
 """
 
+from __future__ import annotations
+
+import argparse
 import asyncio
+import json
+import os
 import sys
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
-# Add project root to path
-project_root = str(Path(__file__).parent.parent)
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+from playwright.async_api import async_playwright
 
-from src.core.config import Settings
-from src.database.manager import DatabaseManager
+URL = "https://www.courtside1891.basketball/games"
 
 
-async def debug_courtside():
-    """Debug function to explore Courtside1891 page structure"""
-    settings = Settings()
-    # Initialize with empty config since we're just debugging
-    DatabaseManager(settings.database_url)
+def _ts() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    async with async_playwright() as p:
-        # Launch browser
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(viewport={"width": 1366, "height": 768})
-        page = await context.new_page()
 
+async def _ensure_out_dir(path: str) -> str:
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+async def _wait(page, selector: str | None, timeout: int):
+    if selector:
         try:
-            # Navigate to the page
-            print("Navigating to Courtside1891...")
-            await page.goto(
-                "https://www.courtside1891.basketball/games",
-                timeout=120000,
-                wait_until="domcontentloaded",
-            )
-            print("Page loaded successfully")
+            await page.wait_for_selector(selector, timeout=timeout)
+        except Exception:
+            pass
 
-            # Wait for content to load
-            print("Waiting for content...")
-            await page.wait_for_selector("body", timeout=30000)
 
-            # Get the page content
-            content = await page.content()
-            print("\nPage content (first 1000 chars):")
-            print(content[:1000])
+async def mode_minimal(page, args):
+    await page.goto(URL, timeout=args.timeout, wait_until="domcontentloaded")
+    await _wait(page, args.wait_selector, args.timeout)
+    out = await _ensure_out_dir(args.out_dir)
+    sc = os.path.join(out, f"courtside_minimal_{_ts()}.png")
+    await page.screenshot(path=sc, full_page=True)
+    html_path = os.path.join(out, f"courtside_minimal_{_ts()}.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(await page.content())
+    return {"screenshot": sc, "html": html_path}
 
-            # Look for common data structures
-            print("\nLooking for JSON data...")
-            json_data = await page.evaluate(
-                """() => {
-                // Check for __NEXT_DATA__
-                const nextData = document.getElementById('__NEXT_DATA__');
-                if (nextData) {
-                    console.log("Found __NEXT_DATA__");
-                    return { type: '__NEXT_DATA__', data: JSON.parse(nextData.textContent) };
-                }
-                
-                // Check for window.__INITIAL_STATE__ or similar
-                if (window.__INITIAL_STATE__) {
-                    console.log("Found __INITIAL_STATE__");
-                    return { type: '__INITIAL_STATE__', data: window.__INITIAL_STATE__ };
-                }
-                
-                // Look for any script tags with JSON data
-                const scripts = Array.from(document.getElementsByTagName('script'));
-                for (const script of scripts) {
-                    const content = script.textContent || '';
-                    if (content.includes('fixtures') || content.includes('games')) {
-                        try {
-                            const json = JSON.parse(content);
-                            return { type: 'script_content', data: json };
-                        } catch (e) {
-                            // Not valid JSON, continue
-                        }
-                    }
-                }
-                
-                return { type: 'no_data', data: null };
-            }"""
-            )
 
-            if json_data["type"] != "no_data":
-                print(f"\nFound {json_data['type']} data:")
-                print(json.dumps(json_data["data"], indent=2)[:2000] + "...")
+async def mode_snapshot(page, args):
+    await page.goto(URL, timeout=args.timeout, wait_until="networkidle")
+    out = await _ensure_out_dir(args.out_dir)
+    sc = os.path.join(out, f"courtside_snapshot_{_ts()}.png")
+    await page.screenshot(path=sc, full_page=True)
+    html_path = os.path.join(out, f"courtside_snapshot_{_ts()}.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(await page.content())
+    return {"screenshot": sc, "html": html_path}
 
-            # First, let's get all the text content to see what's visible
-            print("\nGetting visible text content...")
-            visible_text = await page.evaluate(
-                """() => {
-                return document.body.innerText;
-            }"""
-            )
-            print("\nVisible text content (first 2000 chars):")
-            print(visible_text[:2000] + ("..." if len(visible_text) > 2000 else ""))
 
-            # Check for common API endpoints
-            print("\nLooking for API endpoints in network requests...")
-            api_endpoints = await page.evaluate(
-                """() => {
-                return Array.from(performance.getEntriesByType('resource'))
-                    .filter(r => 
-                        r.initiatorType === 'xmlhttprequest' || 
-                        r.name.includes('api') || 
-                        r.name.includes('graphql') ||
-                        r.name.includes('fixture') ||
-                        r.name.includes('game')
-                    )
-                    .map(r => ({
-                        name: r.name,
-                        type: r.initiatorType,
-                        size: r.transferSize,
-                        duration: r.duration
-                    }));
-            }"""
-            )
+async def mode_raw(page, args):
+    await page.goto(URL, timeout=args.timeout)
+    html = await page.content()
+    out = await _ensure_out_dir(args.out_dir)
+    path = os.path.join(out, f"courtside_raw_{_ts()}.html")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
+    return {"html": path}
 
-            if api_endpoints:
-                print("\nFound potential API endpoints:")
-                for i, endpoint in enumerate(api_endpoints[:10], 1):
-                    print(
-                        f"{i}. {endpoint['name']} (Type: {endpoint['type']}, Size: {endpoint['size']} bytes)"
-                    )
 
-            # Look for fixture elements with more detailed inspection
-            print("\nLooking for fixture elements with detailed inspection...")
-            fixture_elements = await page.evaluate(
-                """() => {
-                const elements = [];
-                
-                // Common fixture selectors
-                const selectors = [
-                    '[data-testid*="fixture"]',
-                    '[class*="fixture"]',
-                    '[class*="game"]',
-                    'a[href*="/game/"]',
-                    'div[role="listitem"]',
-                    'li[role="listitem"]'
-                ];
-                
-                // Try each selector and collect matching elements
-                for (const sel of selectors) {
-                    const matches = Array.from(document.querySelectorAll(sel));
-                    if (matches.length > 0) {
-                        console.log(`Found ${matches.length} elements with selector: ${sel}`);
-                        for (const el of matches) {
-                            elements.push({
-                                selector: sel,
-                                tagName: el.tagName,
-                                id: el.id,
-                                className: el.className,
-                                text: el.textContent.trim().replace(/\\s+/g, ' ').substring(0, 100),
-                                attributes: Array.from(el.attributes).map(attr => ({
-                                    name: attr.name,
-                                    value: attr.value
-                                })),
-                                html: el.outerHTML.substring(0, 300) + (el.outerHTML.length > 300 ? '...' : '')
-                            });
-                        }
-                    }
-                }
-                
-                return elements;
-            }"""
-            )
+async def _extract_fixtures(page):
+    return await page.evaluate(
+        """() => {
+        return Array.from(document.querySelectorAll('[data-testid="fixture-row"]')).map(row => ({
+            home: row.querySelector('[data-testid="team-home"]')?.textContent?.trim() || null,
+            away: row.querySelector('[data-testid="team-away"]')?.textContent?.trim() || null,
+            score: row.querySelector('[data-testid="fixture-score"]')?.textContent?.trim() || null,
+            competition: row.closest('[data-testid="competition-fixtures"]')?.querySelector('[data-testid="competition-name"]')?.textContent?.trim() || null
+        }));
+    }"""
+    )
 
-            print(f"\nFound {len(fixture_elements)} potential fixture elements:")
-            for i, el in enumerate(fixture_elements[:15]):  # Show first 15
-                print(f"\n--- Element {i+1} ---")
-                print(f"Selector: {el['selector']}")
-                print(f"Tag: {el['tagName']}")
-                print(f"ID: {el['id']}")
-                print(f"Classes: {el['className']}")
-                print(f"Text: {el['text']}")
-                print("Attributes:")
-                for attr in el["attributes"]:
-                    print(f"  {attr['name']}: {attr['value']}")
-                print(f"HTML: {el['html']}")
 
-                # If this looks like a game/fixture link, try to extract more details
-                if "game" in (el.get("className", "").lower() + " " + el.get("id", "").lower()):
-                    print("\nThis element might be a game/fixture. Extracting more details...")
-                    try:
-                        # Try to find common patterns for teams and scores
-                        details = await page.evaluate(
-                            """(element) => {
-                            const getText = (selector) => {
-                                const el = element.querySelector(selector);
-                                return el ? el.textContent.trim() : null;
-                            };
-                            
-                            // Common patterns for team names and scores
-                            return {
-                                home_team: getText('[class*="home"], [class*="team1"], [data-home-team]') || 
-                                          (element.getAttribute('data-home-team') || '').trim(),
-                                away_team: getText('[class*="away"], [class*="team2"], [data-away-team]') || 
-                                          (element.getAttribute('data-away-team') || '').trim(),
-                                score: getText('[class*="score"], [class*="result"], [data-score]'),
-                                link: element.href || element.getAttribute('href') || null,
-                                data_attrs: Object.fromEntries(
-                                    Object.entries(element.dataset).map(([k, v]) => [k, v])
-                                )
-                            };
-                        }""",
-                            el["element"],
-                        )
+async def mode_fixtures(page, args):
+    await page.goto(URL, timeout=args.timeout, wait_until="networkidle")
+    await _wait(page, args.wait_selector, args.timeout)
+    fixtures = await _extract_fixtures(page)
+    return {"count": len(fixtures), "fixtures": fixtures}
 
-                        print("Extracted game details:")
-                        for k, v in details.items():
-                            if v:  # Only show non-empty values
-                                print(f"  {k}: {v}")
 
-                    except Exception as e:
-                        print(f"  Could not extract details: {str(e)}")
+async def mode_inspect(page, args):
+    await page.goto(URL, timeout=args.timeout, wait_until="domcontentloaded")
+    await _wait(page, args.wait_selector, args.timeout)
+    test_ids = await page.evaluate(
+        """() => Array.from(document.querySelectorAll('[data-testid]')).slice(0,50).map(el => ({
+            tag: el.tagName,
+            testid: el.getAttribute('data-testid'),
+            text: el.textContent.trim().replace(/\s+/g,' ').substring(0,80)
+        }))"""
+    )
+    selectors = [
+        '[data-testid*="fixture"]','[class*="fixture"]','[data-testid*="game"]','a[href*="/game/"]'
+    ]
+    selector_counts = {}
+    for sel in selectors:
+        try:
+            c = await page.evaluate(f"() => document.querySelectorAll('{sel}').length")
+            selector_counts[sel] = c
+        except Exception:
+            selector_counts[sel] = 0
+    return {"test_ids": test_ids, "selector_counts": selector_counts}
 
-            if len(fixture_elements) > 10:
-                print(f"\n... and {len(fixture_elements) - 10} more elements")
 
-        except Exception as e:
-            print(f"Error during debugging: {str(e)}")
-            import traceback
+async def mode_analyze(page, args):
+    await page.goto(URL, timeout=args.timeout, wait_until="networkidle")
+    await _wait(page, args.wait_selector, args.timeout)
+    containers = await page.evaluate(
+        """() => {
+        const sels = ['main','body','div[role="main"]','.MuiContainer-root','div#root'];
+        return sels.map(s => { const els = Array.from(document.querySelectorAll(s)); return {selector:s,count:els.length,sample:els[0]?{tag:els[0].tagName,text:els[0].textContent.trim().substring(0,120)}:null};});
+    }"""
+    )
+    fixtures = await _extract_fixtures(page)
+    resources = await page.evaluate(
+        """() => Array.from(performance.getEntriesByType('resource')).filter(r=>r.initiatorType==='xmlhttprequest'||/api|graphql|fixture|game/i.test(r.name)).slice(0,40).map(r=>({name:r.name,type:r.initiatorType,duration:r.duration,transfer:r.transferSize}))"""
+    )
+    test_ids_sample = await page.evaluate(
+        """() => Array.from(document.querySelectorAll('[data-testid]')).slice(0,30).map(el=>({testid:el.getAttribute('data-testid'),tag:el.tagName,text:el.textContent.trim().substring(0,80)}))"""
+    )
+    out_dir = await _ensure_out_dir(args.out_dir)
+    report_path = os.path.join(out_dir, f"courtside_analysis_{_ts()}.json")
+    payload = {
+        "mode": "analyze",
+        "fixtures_found": len(fixtures),
+        "fixtures_sample": fixtures[:5],
+        "containers": containers,
+        "resources": resources,
+        "test_ids": test_ids_sample,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    return {"analysis_file": report_path, "summary": {k: payload[k] for k in ("fixtures_found","containers")}}
 
-            traceback.print_exc()
 
+MODES: dict[str, Any] = {
+    "minimal": mode_minimal,
+    "snapshot": mode_snapshot,
+    "raw": mode_raw,
+    "fixtures": mode_fixtures,
+    "inspect": mode_inspect,
+    "analyze": mode_analyze,
+}
+
+
+async def run(args):
+    mode_fn = MODES[args.mode]
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=args.headless)
+        viewport = None
+        if args.viewport is not None:
+            viewport = {"width": args.viewport[0], "height": args.viewport[1]}
+        context = await browser.new_context(viewport=viewport)
+        page = await context.new_page()
+        try:
+            result = await mode_fn(page, args)
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                print(f"Mode '{args.mode}' finished -> {result}")
         finally:
-            # Keep browser open for inspection
-            print("\nDebugging complete. Press Enter to close the browser...")
-            input()
             await browser.close()
 
 
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Unified Courtside1891 debug tool")
+    p.add_argument("--mode", choices=sorted(MODES.keys()), default="minimal")
+    p.add_argument("--headless", action="store_true", help="Run headless")
+    p.add_argument("--timeout", type=int, default=90000)
+    p.add_argument("--wait-selector", dest="wait_selector", default='[data-testid="fixture-row"]')
+    p.add_argument("--out-dir", default="reports/courtside")
+    p.add_argument("--json", action="store_true", help="Print JSON only")
+    p.add_argument("--viewport", type=str, default="1366x768", help="WIDTHxHEIGHT or 'none'")
+    args = p.parse_args(argv)
+    if args.viewport.lower() == "none":
+        args.viewport = None
+    else:
+        try:
+            w, h = args.viewport.lower().split("x")
+            args.viewport = (int(w), int(h))
+        except Exception:
+            print("Invalid --viewport, using default 1366x768", file=sys.stderr)
+            args.viewport = (1366, 768)
+    return args
+
+
+def main(argv: list[str] | None = None):
+    args = parse_args(argv or sys.argv[1:])
+    asyncio.run(run(args))
+
+
 if __name__ == "__main__":
-    import json
-
-    from playwright.async_api import async_playwright
-
-    asyncio.run(debug_courtside())
+    main()

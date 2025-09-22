@@ -7,7 +7,9 @@ Koordiniert alle Analytics Komponenten und bietet einheitliche API.
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Awaitable, Callable, Coroutine, TypeVar, cast, Optional
+
+F = TypeVar("F", bound=Callable[..., Awaitable[Any]])
 
 from ..analytics import AnalyticsEngine, ReportGenerator
 from ..core.config import Settings
@@ -53,160 +55,94 @@ class SportsAnalyticsApp:
             self.logger.error(f"Failed to initialize Analytics App: {e}")
             raise
 
-    async def analyze_player_performance(
-        self, player_id: int, season: str = None
-    ) -> dict[str, Any]:
-        """Analysiert Spielerleistung"""
-        try:
-            start_time = datetime.now()
+    # ------------------------- Internal helpers -------------------------
+    def _timed(
+        self,
+    operation: str,
+    log_success: Optional[str] = None,
+    log_error: Optional[str] = None,
+    ) -> Callable[[F], F]:
+        """Decorator factory for timing + metrics around async operations.
 
-            analysis = await self.analytics_engine.analyze_player_performance(player_id, season)
+        Parameters
+        ----------
+        operation: str
+            Metric / operation key (e.g. "player_analysis").
+        log_success: str | None
+            Optional format string for success log. Can contain placeholders consumed via .format(**locals()).
+        log_error: str | None
+            Optional format string for error log.
+        """
 
-            duration = (datetime.now() - start_time).total_seconds()
+        def wrapper(fn: F) -> F:
+            async def inner(*args, **kwargs):  # type: ignore[override]
+                start_time = datetime.now()
+                try:
+                    result = await fn(*args, **kwargs)
+                    duration = (datetime.now() - start_time).total_seconds()
+                    if self.settings.enable_metrics:
+                        self.metrics.record_analytics_operation(operation, "success", duration)
+                    if log_success:
+                        # Provide common locals
+                        try:
+                            self.logger.info(log_success.format(duration=duration, args=args, kwargs=kwargs))
+                        except Exception:
+                            self.logger.info(f"{operation} completed in {duration:.2f}s")
+                    return result
+                except Exception as e:  # noqa: BLE001
+                    if self.settings.enable_metrics:
+                        self.metrics.record_analytics_operation(operation, "error", 0)
+                    if log_error:
+                        try:
+                            self.logger.error(log_error.format(error=e, args=args, kwargs=kwargs))
+                        except Exception:
+                            self.logger.error(f"{operation} failed: {e}")
+                    else:
+                        self.logger.error(f"{operation} failed: {e}")
+                    return {"error": str(e)}
 
-            # Metriken aufzeichnen
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("player_analysis", "success", duration)
+            return cast(F, inner)
 
-            self.logger.info(f"Player analysis completed for player {player_id} in {duration:.2f}s")
-            return analysis
+        return wrapper
 
-        except Exception as e:
-            self.logger.error(f"Player analysis failed for player {player_id}: {e}")
+    async def analyze_player_performance(self, player_id: int, season: Optional[str] = None) -> dict[str, Any]:  # type: ignore[override]
+        """Analyze single player performance (simplified, not using timing decorator for Py3.9 compat)."""
+        return await self.analytics_engine.analyze_player_performance(player_id, season)
 
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("player_analysis", "error", 0)
-
-            return {"error": str(e)}
-
+    @_timed("match_prediction", log_success="Match prediction completed in {duration:.2f}s")
     async def predict_match_outcome(
-        self, home_team_id: int, away_team_id: int, match_date: datetime = None
-    ) -> dict[str, Any]:
-        """Vorhersage Spielausgang"""
-        try:
-            start_time = datetime.now()
+    self, home_team_id: int, away_team_id: int, match_date: Optional[datetime] = None
+    ) -> dict[str, Any]:  # type: ignore[override]
+        return await self.analytics_engine.predict_match_outcome(
+            home_team_id, away_team_id, match_date
+        )
 
-            prediction = await self.analytics_engine.predict_match_outcome(
-                home_team_id, away_team_id, match_date
-            )
+    @_timed(
+        "league_analytics", log_success="League analytics completed in {duration:.2f}s"
+    )
+    async def generate_league_analytics(self, league_id: int, season: str) -> dict[str, Any]:  # type: ignore[override]
+        return await self.analytics_engine.generate_league_analytics(league_id, season)
 
-            duration = (datetime.now() - start_time).total_seconds()
+    @_timed("player_report")
+    async def generate_player_report(self, player_id: int, season: Optional[str] = None) -> dict[str, Any]:  # type: ignore[override]
+        report = await self.report_generator.generate_player_report(player_id, season)
+        return {
+            "status": "success",
+            "report_content": report,
+        }
 
-            # Metriken aufzeichnen
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("match_prediction", "success", duration)
+    @_timed("league_dashboard")
+    async def generate_league_dashboard(self, league_id: int, season: str) -> dict[str, Any]:  # type: ignore[override]
+        dashboard = await self.report_generator.generate_league_dashboard(league_id, season)
+        return {
+            "status": "success",
+            "dashboard": dashboard,
+        }
 
-            self.logger.info(f"Match prediction completed in {duration:.2f}s")
-            return prediction
-
-        except Exception as e:
-            self.logger.error(f"Match prediction failed: {e}")
-
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("match_prediction", "error", 0)
-
-            return {"error": str(e)}
-
-    async def generate_league_analytics(self, league_id: int, season: str) -> dict[str, Any]:
-        """Erstellt Liga-Analytics"""
-        try:
-            start_time = datetime.now()
-
-            analytics = await self.analytics_engine.generate_league_analytics(league_id, season)
-
-            duration = (datetime.now() - start_time).total_seconds()
-
-            # Metriken aufzeichnen
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("league_analytics", "success", duration)
-
-            self.logger.info(f"League analytics completed in {duration:.2f}s")
-            return analytics
-
-        except Exception as e:
-            self.logger.error(f"League analytics failed: {e}")
-
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("league_analytics", "error", 0)
-
-            return {"error": str(e)}
-
-    async def generate_player_report(self, player_id: int, season: str = None) -> dict[str, Any]:
-        """Erstellt Spieler-Report"""
-        try:
-            start_time = datetime.now()
-
-            report = await self.report_generator.generate_player_report(player_id, season)
-
-            duration = (datetime.now() - start_time).total_seconds()
-
-            # Metriken aufzeichnen
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("player_report", "success", duration)
-
-            return {
-                "status": "success",
-                "report_content": report,
-                "generation_time_seconds": duration,
-            }
-
-        except Exception as e:
-            self.logger.error(f"Player report generation failed: {e}")
-
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("player_report", "error", 0)
-
-            return {"error": str(e)}
-
-    async def generate_league_dashboard(self, league_id: int, season: str) -> dict[str, Any]:
-        """Erstellt Liga-Dashboard"""
-        try:
-            start_time = datetime.now()
-
-            dashboard = await self.report_generator.generate_league_dashboard(league_id, season)
-
-            duration = (datetime.now() - start_time).total_seconds()
-
-            # Metriken aufzeichnen
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("league_dashboard", "success", duration)
-
-            return {
-                "status": "success",
-                "dashboard": dashboard,
-                "generation_time_seconds": duration,
-            }
-
-        except Exception as e:
-            self.logger.error(f"League dashboard generation failed: {e}")
-
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("league_dashboard", "error", 0)
-
-            return {"error": str(e)}
-
-    async def generate_transfer_analysis(self) -> dict[str, Any]:
-        """Erstellt Transfer-Analyse"""
-        try:
-            start_time = datetime.now()
-
-            analysis = await self.report_generator.generate_transfer_analysis()
-
-            duration = (datetime.now() - start_time).total_seconds()
-
-            # Metriken aufzeichnen
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("transfer_analysis", "success", duration)
-
-            return {"status": "success", "analysis": analysis, "generation_time_seconds": duration}
-
-        except Exception as e:
-            self.logger.error(f"Transfer analysis failed: {e}")
-
-            if self.settings.enable_metrics:
-                self.metrics.record_analytics_operation("transfer_analysis", "error", 0)
-
-            return {"error": str(e)}
+    @_timed("transfer_analysis")
+    async def generate_transfer_analysis(self) -> dict[str, Any]:  # type: ignore[override]
+        analysis = await self.report_generator.generate_transfer_analysis()
+        return {"status": "success", "analysis": analysis}
 
     async def run_daily_analytics(self) -> dict[str, Any]:
         """Führt tägliche Analytics-Routine aus"""
@@ -292,66 +228,9 @@ class SportsAnalyticsApp:
 
     async def _generate_daily_reports(self):
         """Generiert tägliche Reports"""
-
-        # Top-Performer Report
-        await self._generate_top_performers_report()
-
+        season = getattr(self.settings, "current_season", None) or datetime.now().strftime("%Y-%Y")
+        await self.report_generator.generate_top_performers_report(season)
         self.logger.info("Daily reports generated successfully")
-
-    async def _generate_top_performers_report(self):
-        """Generiert Top-Performer Report"""
-
-        query = """
-        SELECT 
-            p.first_name || ' ' || p.last_name as player_name,
-            t.name as team_name,
-            sps.goals,
-            sps.assists,
-            sps.matches_played,
-            (sps.goals + sps.assists) as goal_contributions,
-            sps.goals::float / sps.matches_played as goals_per_match
-        FROM players p
-        JOIN season_player_stats sps ON p.id = sps.player_id
-        JOIN teams t ON sps.team_id = t.id
-        WHERE sps.season = '2024-25'
-        AND sps.matches_played >= 10
-        ORDER BY goal_contributions DESC
-        LIMIT 20
-        """
-
-        top_performers = await self.analytics_engine.load_data(query, cache_key="top_performers")
-
-        if not top_performers.empty:
-            # Einfacher HTML-Report
-            html = """
-            <html>
-            <head><title>Top Performers Report</title></head>
-            <body>
-            <h1>Top Performers - Current Season</h1>
-            <table border="1">
-            <tr><th>Player</th><th>Team</th><th>Goals</th><th>Assists</th><th>Contributions</th><th>Goals/Match</th></tr>
-            """
-
-            for _, player in top_performers.iterrows():
-                html += f"""
-                <tr>
-                    <td>{player['player_name']}</td>
-                    <td>{player['team_name']}</td>
-                    <td>{player['goals']}</td>
-                    <td>{player['assists']}</td>
-                    <td>{player['goal_contributions']}</td>
-                    <td>{player['goals_per_match']:.2f}</td>
-                </tr>
-                """
-
-            html += "</table></body></html>"
-
-            # Speichern
-            filename = f"{self.settings.report_output_path}/top_performers_{datetime.now().strftime('%Y%m%d')}.html"
-            with open(filename, "w", encoding="utf-8") as f:
-                f.write(html)
-
-            self.logger.info(f"Top performers report saved to {filename}")
 
     async def get_analytics_summary(self) -> dict[str, Any]:
         """Holt Analytics Summary"""
