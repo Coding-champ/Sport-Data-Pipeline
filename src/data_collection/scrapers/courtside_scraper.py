@@ -9,6 +9,20 @@ import os
 from datetime import datetime
 
 from playwright.async_api import Page, async_playwright
+from src.common.playwright_utils import (
+    browser_page,
+    fetch_page,
+    fetch_page_with_hooks,
+    FetchOptions,
+    FetchHooks,
+    FetchResult,
+    accept_consent,
+    infinite_scroll,
+    parse_captured_json,
+    extract_next_data,
+    extract_from_ld_json,
+    normalize_game_node,
+)
 
 from src.core.config import Settings
 from src.data_collection.scrapers.base import BaseScraper, ScrapingConfig
@@ -56,331 +70,171 @@ class CourtsideScraper(BaseScraper):
         self.settings = settings
 
     async def scrape_data(self) -> list[dict]:
-        """Scrape with comprehensive error handling"""
-        async with async_playwright() as p:
-            # Run non-headless to improve reliability with consent and lazy-loading UIs
-            browser = await p.chromium.launch(headless=False)
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                viewport={"width": 1366, "height": 768},
-            )
-            page = await context.new_page()
+        """Scrape Courtside1891 using unified fetch_page_with_hooks.
 
+        Strategy:
+        - Use hooks to capture JSON network responses containing fixture/game data
+        - After HTML loaded + scroll, run DOM + NEXT.js extraction
+        - Fallbacks: captured JSON, anchors, enrichment of individual game pages
+        Returns list of Fixture DTOs (as dict) ready for persistence.
+        """
+        captured_json: list[dict] = []
+
+        def hook_on_response(resp, page, acc):  # type: ignore[override]
             try:
-                captured_json: list[dict] = []  # network JSON payloads
+                url = resp.url.lower()
+                ctype = (resp.headers.get("content-type") or "").lower()
+                if "application/json" in ctype and any(k in url for k in ["fixture", "game", "match", "schedule"]):
+                    # Async body capture scheduled in fetch_page_with_hooks already; we just mark interest
+                    acc.append({"marker": "potential_fixture", "url": resp.url})
+            except Exception:
+                pass
 
-                async def _on_response(resp):
-                    try:
-                        ctype = (resp.headers.get("content-type") or "").lower()
-                        url = resp.url.lower()
-                        if "application/json" in ctype and any(
-                            k in url for k in ["fixture", "game", "match", "schedule"]
-                        ):
-                            data = await resp.json()
-                            captured_json.append({"url": resp.url, "data": data})
-                    except Exception:
-                        pass
+        def hook_on_console(msg, page, acc):  # type: ignore[override]
+            if msg.type == "error":
+                self.logger.debug(f"Console error: {msg.text}")
+            elif msg.type == "warning":
+                self.logger.debug(f"Console warn: {msg.text}")
 
-                page.on("response", _on_response)
-                # Load page with multiple wait conditions
-                self.logger.info("Loading Courtside1891 website")
+        async def _post_enrichment(page):
+            # placeholder for potential dynamic interactions
+            try:
+                await infinite_scroll(page, max_time_ms=60000, idle_rounds=3)
+            except Exception as e:
+                self.logger.warning(f"Scroll failed: {e}")
+
+        def hook_on_page_ready(page):  # type: ignore[override]
+            # We schedule async enrichment task
+            asyncio.create_task(_post_enrichment(page))
+
+        def hook_before_return(page, meta):  # type: ignore[override]
+            meta["timestamp"] = datetime.utcnow().isoformat()
+
+        hooks = FetchHooks(
+            on_response=hook_on_response,
+            on_console=hook_on_console,
+            on_page_ready=hook_on_page_ready,
+            before_return=hook_before_return,
+        )
+
+        opts = FetchOptions(
+            url="https://www.courtside1891.basketball/games",
+            wait_until="domcontentloaded",
+            wait_selectors=None,
+            wait_text=None,
+            network_idle=False,
+            timeout_ms=180000,
+            retries=2,
+            headless=True,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            viewport={"width": 1366, "height": 768},
+            scroll_rounds=0,
+        )
+
+        try:
+            result: FetchResult = await fetch_page_with_hooks(opts, hooks)
+            html = result.html
+            # Attempt structured extraction using a temporary browser_page to evaluate JS (need a page object)
+            # Re-render minimal once to run evaluate chain (cheaper than duplicating earlier logic due to hook simplicity)
+            async with browser_page(headless=True, user_agent=opts.user_agent, viewport=opts.viewport) as page:
+                await page.set_content(html)
+                # Quick data-testid listing for diagnostics
                 try:
-                    await page.goto(
-                        "https://www.courtside1891.basketball/games",
-                        timeout=180000,  # Increased timeout to 3 minutes
-                        wait_until="domcontentloaded",  # Changed from networkidle to domcontentloaded
+                    test_ids = await page.evaluate(
+                        """() => Array.from(document.querySelectorAll('[data-testid]')).slice(0,40).map(el => ({t:el.tagName,id:el.getAttribute('data-testid')}))"""
                     )
-                    self.logger.info("Page loaded successfully")
-                except Exception as e:
-                    self.logger.error(f"Error loading page: {str(e)}")
-                    # Try to continue even if load times out
+                    self.logger.info(f"data-testid sample count: {len(test_ids)}")
+                except Exception:
                     pass
-                # Handle cookie/consent banner if present
-                await accept_consent(page)
 
-                # Add console message handler to capture browser logs
-                def console_handler(msg):
-                    self.logger.debug(f"BROWSER CONSOLE: {msg.type}: {msg.text}")
-
-                page.on("console", console_handler)
-                # Small settle delay with error handling
-                try:
-                    await page.wait_for_timeout(3000)  # Increased initial delay
-
-                    # Try to handle any modals or popups
-                    await accept_consent(page)
-
-                    # Infinite scroll with better error handling
-                    await infinite_scroll(
-                        page, max_time_ms=60000, idle_rounds=3
-                    )  # Increased timeout
-                except Exception as e:
-                    self.logger.warning(f"Error during page interaction: {str(e)}")
-                    # Continue with whatever content we have
-
-                # Wait for content (polling across alternative selectors)
-                self.logger.info("Waiting for fixtures (polling up to 60s)")
-                found = False
-                selectors = [
-                    '[data-testid="fixture-row"]',
-                    '[data-testid*="fixture"]',
-                    'a[href*="/game/"]',
-                ]
-                for i in range(60):  # ~60s
-                    counts = []
-                    for sel in selectors:
-                        try:
-                            cnt = await page.evaluate(
-                                "selector => document.querySelectorAll(selector).length",
-                                sel,
-                            )
-                        except Exception:
-                            cnt = 0
-                        counts.append((sel, cnt))
-                    total = sum(c for _, c in counts)
-                    if total > 0:
-                        self.logger.info(f"Fixture candidates detected: {counts}")
-                        found = True
-                        break
-                    await page.wait_for_timeout(1000)
-                if not found:
-                    self.logger.warning("No fixture elements detected after polling")
-                    # Try extracting from Next.js data as fallback
-                    next_data_fixtures = await extract_next_data(page)
-                    if next_data_fixtures:
-                        self.logger.info(
-                            f"Extracted {len(next_data_fixtures)} items from __NEXT_DATA__"
-                        )
-                        return next_data_fixtures
-                    # Try network-captured JSON responses
-                    if captured_json:
-                        parsed = parse_captured_json(captured_json)
-                        if parsed:
-                            self.logger.info(f"Extracted {len(parsed)} items from network JSON")
-                            return parsed
-
-                # Debug: Log page HTML structure
-                page_html = await page.content()
-                self.logger.debug(f"Page HTML (first 2000 chars): {page_html[:2000]}")
-
-                # Debug: Log all elements with data-testid
-                test_ids = await page.evaluate(
-                    """() => {
-                    return Array.from(document.querySelectorAll('[data-testid]'))
-                        .map(el => ({
-                            tag: el.tagName,
-                            testid: el.getAttribute('data-testid'),
-                            text: el.textContent.trim().replace(/\s+/g, ' ').substring(0, 50) + '...',
-                            id: el.id || null,
-                            class: el.className || null
-                        }));
-                }"""
-                )
-                self.logger.info(f"Found {len(test_ids)} elements with data-testid:")
-                for item in test_ids[:20]:  # Log first 20 to avoid too much output
-                    testid = item.get("testid", "N/A")
-                    tag = item.get("tag", "?")
-                    text = item.get("text", "")
-                    self.logger.info(f"  - {tag} [data-testid='{testid}']: {text}")
-
-                # Extract data
-                self.logger.info("Extracting fixture data")
                 fixtures = await page.evaluate(
                     """() => {
-                    // Try multiple selector patterns
                     const selectors = [
                         '[data-testid="fixture-row"]',
+                        '[data-testid*="fixture"]',
                         '.fixture-row',
                         '.game-row',
-                        'div[class*="fixture"]',
-                        'div[class*="game"]',
-                        'a[href*="/game/"]',
-                        'a[href*="/fixture/"]'
+                        'a[href*="/game/"]'
                     ];
-                    
-                    // Try each selector until we find matches
                     let rows = [];
                     for (const sel of selectors) {
                         rows = Array.from(document.querySelectorAll(sel));
-                        if (rows.length > 0) {
-                            console.log(`Found ${rows.length} rows with selector: ${sel}`);
-                            break;
-                        }
+                        if (rows.length>0) break;
                     }
-                    
-                    if (rows.length === 0) {
-                        console.error('No fixture rows found with any selector');
-                        return [];
-                    }
-                    
-                    const parseScore = (s) => {
-                        if (!s) return { home_score: null, away_score: null };
-                        const t = s.trim();
-                        const parts = t.replace(/\s+/g,'').replace(':','-').split('-');
-                        const toInt = (x) => { const n = parseInt(x, 10); return Number.isFinite(n) ? n : null; };
-                        return { home_score: toInt(parts[0]), away_score: toInt(parts[1]) };
-                    };
-                    return rows.map(row => {
-                        try {
-                            const homeEl = row.querySelector('[data-testid="team-home"]');
-                            const awayEl = row.querySelector('[data-testid="team-away"]');
-                            const scoreEl = row.querySelector('[data-testid="fixture-score"]');
-                            const statusEl = row.querySelector('[data-testid*="status"], [data-testid*="time"], time, .status');
-                            const linkEl = row.querySelector('a[href*="/game/"]');
-                            const compWrap = row.closest('[data-testid="competition-fixtures"]');
-                            const compNameEl = compWrap?.querySelector('[data-testid="competition-name"]');
-                            const { home_score, away_score } = parseScore(scoreEl?.textContent || '');
-
-                            const getId = (el) => {
-                                if (!el) return null;
-                                // common id attributes seen in markup
-                                return el.getAttribute('data-team-id') || el.getAttribute('data-id') || el.getAttribute('data-external-id') || null;
-                            };
-                            const compId = compWrap?.getAttribute('data-competition-id') || compWrap?.getAttribute('data-id') || null;
-                            const rawHref = linkEl?.getAttribute('href') || null;
-                            const cleanHref = rawHref ? rawHref.split('?')[0] : null;
-
-                            return {
-                                id: row.dataset.fixtureId || row.getAttribute('data-fixture-id') || cleanHref,
-                                home: homeEl?.textContent?.trim() || null,
-                                away: awayEl?.textContent?.trim() || null,
-                                home_id: getId(homeEl),
-                                away_id: getId(awayEl),
-                                home_score,
-                                away_score,
-                                status: statusEl?.textContent?.trim() || null,
-                                competition: compNameEl?.textContent?.trim() || null,
-                                competition_id: compId,
-                                timestamp: new Date().toISOString(),
-                                url: cleanHref,
-                            };
-                        } catch (e) {
-                            return null;
-                        }
-                    }).filter(Boolean);
+                    const parseScore = (s) => { if(!s) return {home_score:null,away_score:null}; const t=s.trim(); const parts=t.replace(/\s+/g,'').replace(':','-').split('-'); const toInt=x=>{const n=parseInt(x,10); return Number.isFinite(n)?n:null}; return {home_score:toInt(parts[0]), away_score:toInt(parts[1])}; };
+                    return rows.map(r=>{ try{ const home=r.querySelector('[data-testid="team-home"]'); const away=r.querySelector('[data-testid="team-away"]'); const score=r.querySelector('[data-testid="fixture-score"]'); const status=r.querySelector('[data-testid*="status"], [data-testid*="time"], time, .status'); const link=r.querySelector('a[href*="/game/"]'); const compWrap=r.closest('[data-testid="competition-fixtures"]'); const compName=compWrap?.querySelector('[data-testid="competition-name"]'); const {home_score,away_score}=parseScore(score?.textContent||''); const getId=(el)=> el? (el.getAttribute('data-team-id')||el.getAttribute('data-id')||el.getAttribute('data-external-id')||null):null; const compId=compWrap?.getAttribute('data-competition-id')||compWrap?.getAttribute('data-id')||null; const rawHref=link?.getAttribute('href')||null; const cleanHref=rawHref?rawHref.split('?')[0]:null; return { id: r.dataset.fixtureId || r.getAttribute('data-fixture-id') || cleanHref, home: home?.textContent?.trim()||null, away: away?.textContent?.trim()||null, home_id:getId(home), away_id:getId(away), home_score, away_score, status: status?.textContent?.trim()||null, competition: compName?.textContent?.trim()||null, competition_id: compId, timestamp: new Date().toISOString(), url: cleanHref }; } catch(e){ return null; }}).filter(Boolean);
                 }"""
                 )
 
-                # Log the raw fixtures data for debugging
-                self.logger.info(f"Extracted {len(fixtures) if fixtures else 0} fixtures")
-                if fixtures:
-                    self.logger.debug(
-                        f"Sample fixture data: {json.dumps(fixtures[0], indent=2) if fixtures[0] else 'No data'}"
-                    )
-
-                # Fallback extraction using broader anchors if needed
                 if not fixtures:
-                    anchors_guess = await page.evaluate(
-                        """(origin) => {
-                        const anchors = Array.from(document.querySelectorAll('a[href*="/game/"]'));
-                        const abs = (href) => href?.startsWith('http') ? href : `${origin}${href}`;
-                        return anchors.map(a => ({
-                            id: (a.getAttribute('href')||'').split('?')[0],
-                            url: abs((a.getAttribute('href')||'').split('?')[0]),
-                            text: (a.textContent || '').replace(/\s+/g,' ').trim() || null,
-                            timestamp: new Date().toISOString(),
-                        }));
-                    }""",
+                    # Try __NEXT_DATA__ embedded in HTML
+                    next_data = await extract_next_data(page)
+                    if next_data:
+                        fixtures = next_data
+
+                if not fixtures and result.responses:
+                    # Network JSON captured via hook; parse by reusing parse_captured_json expecting structure {data:...}
+                    try:
+                        # Synthesize captured_json list similar to old logic
+                        synthesized = [r for r in result.responses if "data" in r]
+                        if synthesized:
+                            parsed = parse_captured_json(synthesized)  # type: ignore[arg-type]
+                            if parsed:
+                                fixtures = parsed
+                    except Exception:
+                        pass
+
+                if not fixtures:
+                    # Fallback anchor harvesting
+                    anchors = await page.evaluate(
+                        """(origin)=> Array.from(document.querySelectorAll('a[href*="/game/"]')).map(a=>({id:(a.getAttribute('href')||'').split('?')[0], url: (a.getAttribute('href')||'').startsWith('http')?a.getAttribute('href'): `${origin}${(a.getAttribute('href')||'')}`, timestamp:new Date().toISOString()}))""",
                         self.config.base_url.rstrip("/"),
                     )
-                    fixtures = anchors_guess
-                if not fixtures and captured_json:
-                    parsed = parse_captured_json(captured_json)
-                    if parsed:
-                        fixtures = parsed
-                # As a last resort, return the list of JSON endpoints observed for manual inspection
-                if not fixtures and captured_json:
-                    fixtures = [
-                        {
-                            "id": None,
-                            "home": None,
-                            "away": None,
-                            "score": None,
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "debug_json_url": item.get("url"),
-                        }
-                        for item in captured_json[:10]
-                    ]
+                    fixtures = anchors
 
-                # Enrich if fixtures look incomplete (missing names/ids/scores)
-                def is_incomplete(item: dict) -> bool:
-                    keys = item.keys()
-                    return not (
-                        ("home" in keys or "home_id" in keys)
-                        and ("away" in keys or "away_id" in keys)
-                        and ("home_score" in keys or "away_score" in keys)
-                    )
+            # enrichment if incomplete
+            def is_incomplete(item: dict) -> bool:
+                keys = item.keys()
+                return not (("home" in keys or "home_id" in keys) and ("away" in keys or "away_id" in keys) and ("home_score" in keys or "away_score" in keys))
 
-                if fixtures and any(is_incomplete(f) for f in fixtures):
-                    # Collect game anchors from page and enrich
-                    self.logger.info(
-                        "Results look incomplete, collecting game links for enrichment..."
-                    )
-                    game_links = await page.evaluate(
-                        """(origin) => {
-                        const anchors = Array.from(document.querySelectorAll('a[href*="/game/"]'));
-                        const seen = new Set();
-                        const abs = (href) => href?.startsWith('http') ? href : `${origin}${href}`;
-                        return anchors.map(a => a.getAttribute('href')).filter(Boolean).filter(h => {
-                            if (seen.has(h)) return false; seen.add(h); return true;
-                        }).map(href => ({ id: href.split('?')[0], url: abs(href.split('?')[0]) }));
-                    }""",
-                        self.config.base_url.rstrip("/"),
-                    )
+            if fixtures and any(is_incomplete(f) for f in fixtures):
+                # re-open a real browser context to enrich game pages (need JS execution & network)
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(headless=True)
+                    context = await browser.new_context(user_agent=opts.user_agent, viewport=opts.viewport)
+                    game_links = []
+                    for f in fixtures:
+                        if f.get("url"):
+                            game_links.append({"id": f["url"], "url": f["url"]})
                     if game_links:
                         enriched = await self._enrich_from_game_pages(context, game_links)
                         if enriched:
                             fixtures = enriched
+                    await browser.close()
 
-                # Unify record shape before returning
-                unified = self._unify_fixture_records(fixtures)
-                missing_counts = {
-                    "fixture_id": sum(1 for f in unified if not f.get("fixture_id")),
-                    "home_team_id": sum(1 for f in unified if not f.get("home_team_id")),
-                    "away_team_id": sum(1 for f in unified if not f.get("away_team_id")),
-                    "competition_id": sum(1 for f in unified if not f.get("competition_id")),
-                }
-                self.logger.info(
-                    f"Unified {len(unified)} fixtures. Missing fields: {missing_counts}"
+            unified = self._unify_fixture_records(fixtures)
+            self.logger.info(f"Unified {len(unified)} fixtures (hook pipeline)")
+            fixtures_dto = [
+                Fixture(
+                    fixture_id=f.get("fixture_id"),
+                    home_team_name=f.get("home_team_name"),
+                    away_team_name=f.get("away_team_name"),
+                    home_team_id=f.get("home_team_id"),
+                    away_team_id=f.get("away_team_id"),
+                    competition_name=f.get("competition_name"),
+                    competition_id=f.get("competition_id"),
+                    home_score=f.get("home_score"),
+                    away_score=f.get("away_score"),
+                    status=f.get("status"),
+                    url=f.get("url"),
+                    scraped_at=datetime.fromisoformat(f.get("timestamp")) if f.get("timestamp") else datetime.utcnow(),
                 )
-
-                self.logger.info(f"Successfully scraped {len(unified)} fixtures")
-                # Map unified dicts to Fixture DTOs
-                fixtures_dto = [
-                    Fixture(
-                        fixture_id=f.get("fixture_id"),
-                        home_team_name=f.get("home_team_name"),
-                        away_team_name=f.get("away_team_name"),
-                        home_team_id=f.get("home_team_id"),
-                        away_team_id=f.get("away_team_id"),
-                        competition_name=f.get("competition_name"),
-                        competition_id=f.get("competition_id"),
-                        home_score=f.get("home_score"),
-                        away_score=f.get("away_score"),
-                        status=f.get("status"),
-                        url=f.get("url"),
-                        scraped_at=datetime.fromisoformat(f.get("timestamp")) if f.get("timestamp") else datetime.utcnow(),
-                    )
-                    for f in unified
-                ]
-                return fixtures_dto
-
-            except Exception as e:
-                self.logger.error(f"Scraping failed: {str(e)}", exc_info=True)
-                # Save error screenshot to logs/courtside with timestamp
-                ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-                out_dir = os.path.join(self.settings.log_file_path, "courtside")
-                try:
-                    os.makedirs(out_dir, exist_ok=True)
-                    screenshot_path = os.path.join(out_dir, f"courtside_error_{ts}.png")
-                    await page.screenshot(path=screenshot_path)
-                    self.logger.info(f"Saved error screenshot: {screenshot_path}")
-                except Exception as se:
-                    self.logger.warning(f"Failed to save error screenshot: {se}")
-                return []
-
-            finally:
-                await browser.close()
+                for f in unified
+            ]
+            return fixtures_dto
+        except Exception as e:
+            self.logger.error(f"Courtside hook scraping failed: {e}", exc_info=True)
+            return []
 
     async def _extract_from_next_data(self, page: Page) -> list[dict]:
         """Delegate to shared utils.extract_next_data"""

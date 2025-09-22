@@ -538,3 +538,157 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 
 
 *Diese technische Dokumentation wird kontinuierlich aktualisiert und erweitert.*
+
+---
+
+## 🌐 Unified Playwright Rendering & Hook System
+
+### Motivation
+
+Vor der Konsolidierung enthielten mehrere Scraper (Flashscore, Premier League, Transfermarkt Injuries, Courtside) duplizierte Playwright-Logik: Browserstart, Consent Handling, Scrolling, Retry, Event-Capture. Diese wurde zentralisiert in `src/common/playwright_utils.py` um:
+
+- Boilerplate zu reduzieren
+- Einheitliche Retry/Backoff Strategien durchzusetzen
+- Wiederverwendbare Event-Hooks bereitzustellen (Netzwerk JSON / Console / Requests)
+- Vereinheitlichte Consent- & Lazy-Load Handhabung (Scrolling)
+
+### Kern-Bausteine
+
+```python
+@dataclass
+class FetchOptions:
+    url: str
+    wait_until: str = "domcontentloaded"
+    wait_selectors: Sequence[str] | None = None
+    wait_text: Sequence[str] | None = None
+    network_idle: bool = False
+    timeout_ms: int = 45000
+    retries: int = 3
+    backoff_base: float = 1.0
+    headless: bool = True
+    user_agent: str | None = None
+    viewport: dict[str, int] | None = None
+    extra_headers: dict[str,str] | None = None
+    consent: bool = True
+    scroll_rounds: int = 0
+
+async def fetch_page(opts: FetchOptions) -> str
+async def fetch_page_with_hooks(opts: FetchOptions, hooks: FetchHooks) -> FetchResult
+```
+
+```python
+@dataclass
+class FetchHooks:
+    on_response: Callable[[Response, Page, list[dict]], None] | None = None
+    on_console: Callable[[ConsoleMessage, Page, list[dict]], None] | None = None
+    on_request: Callable[[Request], None] | None = None
+    on_page_ready: Callable[[Page], None] | None = None
+    before_return: Callable[[Page, dict], None] | None = None
+    on_error: Callable[[Exception, int], None] | None = None
+
+@dataclass
+class FetchResult:
+    html: str
+    responses: list[dict]
+    console: list[dict]
+    meta: dict[str, Any]
+```
+
+### Standard Fetch (HTML only)
+
+```python
+html = await fetch_page(FetchOptions(
+    url="https://www.flashscore.com/football/",
+    wait_selectors=[".event__match"],
+    scroll_rounds=2,
+))
+```
+
+### Erweiterte Fetch mit Hooks
+
+```python
+responses_capture: list[dict] = []
+
+def on_resp(resp, page, acc):
+    if "application/json" in (resp.headers.get("content-type") or "").lower():
+        acc.append({"url": resp.url, "status": resp.status})
+
+hooks = FetchHooks(on_response=on_resp)
+result = await fetch_page_with_hooks(
+    FetchOptions(url="https://www.courtside1891.basketball/games", timeout_ms=120_000, retries=2),
+    hooks
+)
+print(len(result.responses), "JSON/other responses erfasst")
+```
+
+### Retry & Backoff
+
+Beide Fetch-Varianten verwenden exponentielles Backoff (`backoff_base`, Verdopplung bis max 8s + Jitter). Fehler nach Ausschöpfung → `PlaywrightFetchError`.
+
+### Consent Handling
+
+`accept_consent(page)` versucht mehrere gängige Button-Muster (Internationalisierung berücksichtigt: *Accept*, *Agree*, *Alle akzeptieren*). Fehler werden unterdrückt, Skript läuft weiter.
+
+### Scroll / Lazy Load
+
+Einfacher Mechanismus via `scroll_rounds` (mehrfaches `mouse.wheel`). Komplexeres Infinite-Scrolling für spezielle Seiten steht als Utility `infinite_scroll(page, max_time_ms=..., idle_rounds=...)` zur Verfügung.
+
+### Courtside Migration Beispiel
+
+Der frühere `courtside_scraper` enthielt ~250 Zeilen Playwright-Steuerlogik. Er nutzt jetzt:
+
+1. Hooks zum Erfassen relevanter JSON-Endpunkte (`fixture`, `game`, `schedule`).
+2. Post-Verarbeitung (DOM + `__NEXT_DATA__` + Netzwerk JSON Fallback) auf Basis des resultierenden HTML & Response-Payloads.
+
+### Hook Rezepte (Patterns)
+
+| Ziel | Hook Kombination | Notizen |
+|------|------------------|---------|
+| Netzwerk JSON sammeln | `on_response` | Filter auf `content-type` + Keyword im URL |
+| Console Fehler Monitoring | `on_console` | Logging-Level anpassbar |
+| Selektive Request Blockade | `on_request` | `if any(ad in req.url for ad in ["analytics","ads"]) : req.abort()` |
+| Später DOM-Mutate vor Rückgabe | `before_return` | Meta erweitern (`meta['extracted']=...`) |
+| Schritt nach Navigation (Scrolling, Click) | `on_page_ready` | Kann `asyncio.create_task(...)` nutzen |
+| Metriken bei Fehlern | `on_error` | Retry Versuch & Ausnahme-Typ taggen |
+
+### Testabdeckung
+
+Unit Tests (`tests/unit/test_playwright_utils*.py`) mocken `async_playwright` und prüfen:
+
+- Erfolgreiche HTML Rückgabe
+- Retry Verhalten bei Fehlern
+- Hook-Akkumulation (Responses + Console)
+
+### Empfehlungen
+
+| Use Case | Funktion |
+|----------|----------|
+| Schneller statischer HTML Snapshot | `fetch_page` |
+| Event-getriebene dynamische Seite | `fetch_page_with_hooks` |
+| Netzwerk JSON extrahieren | Hooks (`on_response`) + Parser (`parse_captured_json`) |
+| Komplexes zweistufiges Enrichment (Detailseiten) | Erst Hooks + DOM, dann manuell `_enrich_from_game_pages` |
+
+### Erweiterungspotenzial
+
+- Headless Mode Toggle via global Settings
+- Persistente Browser-Reuse (Pooling) um Startup-Kosten zu senken
+- Structured Tracing (Span pro Attempt) in `meta`
+- Adaptive Wait Strategie (wenn Selektoren nicht erscheinen → dynamische Backoff Verlängerung)
+
+---
+
+## 🧪 Teststruktur Konsolidierung
+
+Die Tests wurden refaktoriert:
+
+- Zentrale Fixtures in `tests/conftest.py` (Pfad-Setup, HTML Samples, Mapper)
+- Parametrisierte Tests statt manueller Loops
+- Playwright Utility Tests isolieren Retry/Hook Logik mit Mocks
+
+Konventionen:
+
+- Unit Tests: reine Logik / Parsing / Utilities
+- Integration Tests: End-to-End Pfade (Datenfluss, Orchestrator)
+- Keine realen Netzwerkaufrufe in Unit Ebene – Playwright & HTTP via Mocks
+
+---

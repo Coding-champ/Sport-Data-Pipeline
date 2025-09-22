@@ -4,9 +4,234 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from playwright.async_api import Page
+from playwright.async_api import Page, async_playwright
 
 # Shared async Playwright helpers used by multiple scrapers
+
+import asyncio
+import random
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Sequence, Callable
+
+
+class PlaywrightFetchError(RuntimeError):
+    pass
+
+
+@dataclass
+class FetchResult:
+    html: str
+    responses: list[dict[str, Any]]
+    console: list[dict[str, Any]]
+    meta: dict[str, Any]
+
+
+@dataclass
+class FetchHooks:
+    """Optional callbacks for advanced capture.
+
+    Each callback should be fast/fail-safe; exceptions are suppressed.
+    """
+    # (response, page, accumulator_list)
+    on_response: Callable[[Any, Any, list[dict[str, Any]]], None] | None = None
+    # (console_message, page, accumulator_list)
+    on_console: Callable[[Any, Any, list[dict[str, Any]]], None] | None = None
+    # (request) -> optionally request.abort()
+    on_request: Callable[[Any], None] | None = None
+    # (page) invoked after navigation + consent + waits
+    on_page_ready: Callable[[Any], None] | None = None
+    # (page, result_dict) last mutation point before return
+    before_return: Callable[[Any, dict[str, Any]], None] | None = None
+    # (exception, attempt_index)
+    on_error: Callable[[Exception, int], None] | None = None
+
+
+@dataclass
+class FetchOptions:
+    url: str
+    wait_until: str = "domcontentloaded"
+    wait_selectors: Sequence[str] | None = None
+    wait_text: Sequence[str] | None = None
+    network_idle: bool = False
+    timeout_ms: int = 45000
+    retries: int = 3
+    backoff_base: float = 1.0
+    headless: bool = True
+    user_agent: str | None = None
+    locale: str | None = None
+    viewport: dict[str, int] | None = None
+    extra_headers: dict[str, str] | None = None
+    consent: bool = True
+    scroll_rounds: int = 0  # quick lazy load helper
+
+
+async def _apply_waits(page: Page, opts: FetchOptions) -> None:
+    # selectors
+    if opts.wait_selectors:
+        for sel in opts.wait_selectors:
+            try:
+                await page.wait_for_selector(sel, timeout=3000)
+            except Exception:
+                continue
+    # text
+    if opts.wait_text:
+        for t in opts.wait_text:
+            try:
+                await page.wait_for_selector(f':has-text("{t}")', timeout=2000)
+            except Exception:
+                continue
+    if opts.network_idle:
+        with contextlib.suppress(Exception):
+            await page.wait_for_load_state("networkidle")
+
+
+@asynccontextmanager
+async def browser_page(*, headless: bool = True, user_agent: str | None = None, locale: str | None = None,
+                       viewport: dict[str, int] | None = None, extra_headers: dict[str, str] | None = None) -> AsyncIterator[Page]:
+    """Async context manager yielding a Playwright Page with standard teardown."""
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=headless)
+        context_args: dict[str, Any] = {}
+        if user_agent:
+            context_args["user_agent"] = user_agent
+        if locale:
+            context_args["locale"] = locale
+        if extra_headers:
+            context_args["extra_http_headers"] = extra_headers
+        if viewport:
+            context_args["viewport"] = viewport
+        context = await browser.new_context(**context_args)
+        page = await context.new_page()
+        try:
+            yield page
+        finally:
+            with contextlib.suppress(Exception):
+                await context.close()
+            with contextlib.suppress(Exception):
+                await browser.close()
+
+
+async def fetch_page(opts: FetchOptions) -> str:
+    """Unified high-level page fetch with retries, consent handling, waits and minimal scrolling.
+
+    Returns final HTML content. Raises PlaywrightFetchError after exhausting retries.
+    """
+    last_err: Exception | None = None
+    backoff = opts.backoff_base
+    for attempt in range(1, opts.retries + 1):
+        try:
+            async with browser_page(headless=opts.headless, user_agent=opts.user_agent, locale=opts.locale,
+                                    viewport=opts.viewport, extra_headers=opts.extra_headers) as page:
+                await page.goto(opts.url, wait_until=opts.wait_until, timeout=opts.timeout_ms)
+                if opts.consent:
+                    with contextlib.suppress(Exception):
+                        await accept_consent(page)
+                await _apply_waits(page, opts)
+                # lightweight scroll rounds
+                for _ in range(max(0, opts.scroll_rounds)):
+                    try:
+                        await page.mouse.wheel(0, 1200)
+                        await page.wait_for_timeout(350)
+                    except Exception:
+                        break
+                html = await page.content()
+                if html:
+                    return html
+        except Exception as e:  # pragma: no cover - network/env variability
+            last_err = e
+        if attempt < opts.retries:
+            jitter = random.uniform(0, 0.5)
+            await asyncio.sleep(backoff + jitter)
+            backoff = min(backoff * 2, 8.0)
+    raise PlaywrightFetchError(f"Failed to fetch {opts.url} after {opts.retries} attempts: {last_err}")
+
+
+async def fetch_page_with_hooks(opts: FetchOptions, hooks: FetchHooks) -> FetchResult:
+    """Extended fetch capturing responses / console / custom interactions via hooks.
+
+    Retries mirror fetch_page behaviour. Only successful attempt data is returned.
+    """
+    last_err: Exception | None = None
+    backoff = opts.backoff_base
+    for attempt in range(1, opts.retries + 1):
+        responses: list[dict[str, Any]] = []
+        console_msgs: list[dict[str, Any]] = []
+        try:
+            async with browser_page(headless=opts.headless, user_agent=opts.user_agent, locale=opts.locale,
+                                    viewport=opts.viewport, extra_headers=opts.extra_headers) as page:
+                # Register request hook early
+                if hooks.on_request:
+                    try:
+                        page.on("request", lambda req: hooks.on_request and hooks.on_request(req))
+                    except Exception:
+                        pass
+                if hooks.on_response:
+                    def _resp_handler(resp):
+                        try:
+                            ctype = (resp.headers.get("content-type") or "").lower()
+                            is_json = "application/json" in ctype
+                            payload: dict[str, Any] = {"url": resp.url, "status": resp.status}
+                            if is_json:
+                                # schedule async read
+                                async def _read():  # noqa: D401
+                                    try:
+                                        data = await resp.json()
+                                        payload["json_keys"] = list(data.keys()) if isinstance(data, dict) else None
+                                        payload["data"] = data
+                                    except Exception:
+                                        pass
+                                asyncio.create_task(_read())
+                            hooks.on_response(resp, page, responses)  # type: ignore[arg-type]
+                            responses.append(payload)
+                        except Exception:
+                            pass
+                    try:
+                        page.on("response", _resp_handler)
+                    except Exception:
+                        pass
+                if hooks.on_console:
+                    def _console_handler(msg):
+                        try:
+                            hooks.on_console(msg, page, console_msgs)  # type: ignore[arg-type]
+                            console_msgs.append({"type": msg.type, "text": msg.text})
+                        except Exception:
+                            pass
+                    try:
+                        page.on("console", _console_handler)
+                    except Exception:
+                        pass
+
+                await page.goto(opts.url, wait_until=opts.wait_until, timeout=opts.timeout_ms)
+                if opts.consent:
+                    with contextlib.suppress(Exception):
+                        await accept_consent(page)
+                await _apply_waits(page, opts)
+                for _ in range(max(0, opts.scroll_rounds)):
+                    try:
+                        await page.mouse.wheel(0, 1200)
+                        await page.wait_for_timeout(350)
+                    except Exception:
+                        break
+                if hooks.on_page_ready:
+                    with contextlib.suppress(Exception):
+                        hooks.on_page_ready(page)
+                html = await page.content()
+                result_meta: dict[str, Any] = {"attempt": attempt, "url": opts.url}
+                if hooks.before_return:
+                    with contextlib.suppress(Exception):
+                        hooks.before_return(page, result_meta)
+                if html:
+                    return FetchResult(html=html, responses=responses, console=console_msgs, meta=result_meta)
+        except Exception as e:  # pragma: no cover
+            last_err = e
+            if hooks.on_error:
+                with contextlib.suppress(Exception):
+                    hooks.on_error(e, attempt)
+        if attempt < opts.retries:
+            jitter = random.uniform(0, 0.5)
+            await asyncio.sleep(backoff + jitter)
+            backoff = min(backoff * 2, 8.0)
+    raise PlaywrightFetchError(f"Failed (hooks) {opts.url} after {opts.retries} attempts: {last_err}")
 
 
 async def accept_consent(page: Page) -> bool:

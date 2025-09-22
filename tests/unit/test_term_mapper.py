@@ -1,29 +1,24 @@
 import pytest
-import sys
-from pathlib import Path
-
-# Ensure project root (containing src/) is on sys.path when tests executed directly
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from src.common.term_mapper import TermMapper, map_position
 
 
-def test_default_position_mapper_basic_synonyms():
+@pytest.mark.parametrize(
+    "term,expected",
+    [
+        # Goalkeeper
+        ("Torwart", "GK"), ("Torhüter", "GK"), ("Keeper", "GK"), ("Goalkeeper", "GK"), ("TW", "GK"), ("gk", "GK"),
+        # Defender
+        ("Defender", "DF"), ("Verteidiger", "DF"), ("Abwehr", "DF"), ("CB", "DF"), ("IV", "DF"), ("LV", "DF"), ("RV", "DF"), ("Full-Back", "DF"), ("Wing Back", "DF"),
+        # Midfielder
+        ("Mittelfeld", "MF"), ("Midfielder", "MF"), ("DM", "MF"), ("OM", "MF"), ("ZM", "MF"), ("AM", "MF"), ("CM", "MF"), ("LM", "MF"), ("RM", "MF"),
+        # Forward
+        ("Stürmer", "FW"), ("Stuermer", "FW"), ("Angriff", "FW"), ("Angreifer", "FW"), ("Striker", "FW"), ("FW", "FW"), ("MS", "FW"), ("ST", "FW"), ("CF", "FW"),
+    ],
+)
+def test_default_position_mapper_synonyms(term, expected):
     mapper = TermMapper.default_position_mapper()
-    # Goalkeeper synonyms
-    for term in ["Torwart", "Torhüter", "Keeper", "Goalkeeper", "TW", "gk"]:
-        assert mapper.lookup(term) == "GK"
-    # Defender synonyms
-    for term in ["Defender", "Verteidiger", "Abwehr", "CB", "IV", "LV", "RV", "Full-Back", "Wing Back"]:
-        assert mapper.lookup(term) == "DF"
-    # Midfielder synonyms
-    for term in ["Mittelfeld", "Midfielder", "DM", "OM", "ZM", "AM", "CM", "LM", "RM"]:
-        assert mapper.lookup(term) == "MF"
-    # Forward synonyms
-    for term in ["Stürmer", "Stuermer", "Angriff", "Angreifer", "Striker", "FW", "MS", "ST", "CF"]:
-        assert mapper.lookup(term) == "FW"
+    assert mapper.lookup(term) == expected
 
 
 def test_map_position_convenience():
@@ -42,5 +37,5 @@ def test_unknown_returns_none():
 
 def test_runtime_registration():
     mapper = TermMapper.default_position_mapper()
-    mapper.register("MF", "playmaker")  # new synonym
+    mapper.register("MF", "playmaker")
     assert mapper.lookup("PlayMaker") == "MF"

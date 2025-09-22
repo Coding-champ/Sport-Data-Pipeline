@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from playwright.async_api import async_playwright
+from src.common.playwright_utils import browser_page
 
 URL = "https://www.courtside1891.basketball/games"
 
@@ -167,21 +167,15 @@ MODES: dict[str, Any] = {
 
 async def run(args):
     mode_fn = MODES[args.mode]
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=args.headless)
-        viewport = None
-        if args.viewport is not None:
-            viewport = {"width": args.viewport[0], "height": args.viewport[1]}
-        context = await browser.new_context(viewport=viewport)
-        page = await context.new_page()
-        try:
-            result = await mode_fn(page, args)
-            if args.json:
-                print(json.dumps(result, ensure_ascii=False, indent=2))
-            else:
-                print(f"Mode '{args.mode}' finished -> {result}")
-        finally:
-            await browser.close()
+    viewport = None
+    if args.viewport is not None:
+        viewport = {"width": args.viewport[0], "height": args.viewport[1]}
+    async with browser_page(headless=args.headless, viewport=viewport) as page:
+        result = await mode_fn(page, args)
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"Mode '{args.mode}' finished -> {result}")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

@@ -11,7 +11,7 @@ import random
 from datetime import datetime
 from pathlib import Path
 
-from playwright.async_api import async_playwright
+from src.common.playwright_utils import fetch_page, FetchOptions, PlaywrightFetchError
 
 from src.core.config import Settings
 from src.data_collection.scrapers.base import BaseScraper, ScrapingConfig
@@ -111,115 +111,27 @@ class FlashscoreScraper(BaseScraper):
             raise
 
     async def fetch_with_playwright(self, url: str) -> str:
-        """Verwendet Playwright mit Retries, akzeptiert Consent und rendert HTML."""
-        timeout = 45000
-        # Use centralized anti-detection headers (common.http)
         headers = (
             getattr(self, "anti_detection", None).session_headers
             if getattr(self, "anti_detection", None)
             else {}
         )
-        user_agent = headers.get("User-Agent", "Mozilla/5.0")
-        accept_lang = headers.get("Accept-Language", "de-DE,de;q=0.9")
-
-        retries = 3
-        backoff = 1.0
-        last_err = None
-
-        for attempt in range(1, retries + 1):
-            try:
-                self.logger.debug(f"Playwright fetch attempt {attempt}/{retries} for {url}")
-                async with async_playwright() as p:
-                    browser = await p.chromium.launch(headless=True)
-                    context = await browser.new_context(
-                        user_agent=user_agent,
-                        locale="de-DE",
-                        timezone_id="Europe/Berlin",
-                        viewport={"width": 1280, "height": 1800},
-                        device_scale_factor=1.0,
-                        extra_http_headers={"Accept-Language": accept_lang},
-                    )
-                    page = await context.new_page()
-                    html = ""
-                    try:
-                        await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
-                        try:
-                            await page.wait_for_load_state("networkidle", timeout=8000)
-                        except Exception:
-                            pass
-
-                        # Consent-Buttons
-                        consent_selectors = [
-                            "#onetrust-accept-btn-handler",
-                            "button:has-text('Akzeptieren')",
-                            "button:has-text('Alle akzeptieren')",
-                            "button:has-text('Agree')",
-                            "button:has-text('I agree')",
-                            "#didomi-notice-agree-button",
-                            "button[data-qa='consent-accept-all']",
-                            "#qc-cmp2-ui button:has-text('Zustimmen')",
-                            "#qc-cmp2-ui button:has-text('Einverstanden')",
-                        ]
-                        for sel in consent_selectors:
-                            try:
-                                if await page.locator(sel).first.is_visible(timeout=1000):
-                                    await page.locator(sel).first.click(timeout=2000)
-                                    await page.wait_for_timeout(500)
-                                    break
-                            except Exception:
-                                continue
-
-                        # Live-Filter aktivieren
-                        live_selectors = [
-                            "a[role='tab']:has-text('Live')",
-                            "a:has-text('LIVE')",
-                            "button:has-text('Live')",
-                            "[data-testid='live']",
-                        ]
-                        for lsel in live_selectors:
-                            try:
-                                if await page.locator(lsel).first.is_visible(timeout=1000):
-                                    await page.locator(lsel).first.click(timeout=1500)
-                                    await page.wait_for_timeout(500)
-                                    break
-                            except Exception:
-                                continue
-
-                        # Lazy-Loading anstoßen
-                        try:
-                            for _ in range(3):
-                                await page.mouse.wheel(0, 1200)
-                                await page.wait_for_timeout(400)
-                        except Exception:
-                            pass
-
-                        # Auf Match-Container warten (best effort)
-                        try:
-                            await page.wait_for_selector("div[class*='event__match']", timeout=8000)
-                        except Exception:
-                            pass
-
-                        html = await page.content()
-                    finally:
-                        await context.close()
-                        await browser.close()
-
-                    if html:
-                        return html
-
-            except Exception as e:
-                last_err = e
-                self.logger.warning(
-                    f"Playwright fetch failed (attempt {attempt}/{retries}) for {url}: {e}"
-                )
-                if attempt < retries:
-                    sleep_for = backoff + random.uniform(0, 0.5)
-                    await asyncio.sleep(sleep_for)
-                    backoff = min(backoff * 2, 8.0)
-                else:
-                    break
-
-        raise RuntimeError(f"Playwright failed after {retries} attempts: {last_err}")
+        opts = FetchOptions(
+            url=url,
+            headless=True,
+            user_agent=headers.get("User-Agent", "Mozilla/5.0"),
+            locale="de-DE",
+            extra_headers={"Accept-Language": headers.get("Accept-Language", "de-DE,de;q=0.9")},
+            wait_selectors=["div[class*='event__match']"],
+            scroll_rounds=3,
+            retries=3,
+            timeout_ms=45000,
+        )
+        try:
+            return await fetch_page(opts)
+        except PlaywrightFetchError as e:  # re-log with context
+            self.logger.error(str(e))
+            raise
 
     def _extract_match_data(self, match_element) -> Optional[dict]:
         """Extrahiert Match-Daten"""

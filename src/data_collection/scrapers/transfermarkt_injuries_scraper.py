@@ -43,7 +43,7 @@ from src.common.parsing import (
     parse_int,
     soup_from_html,
 )
-from src.common.playwright_utils import BrowserSession, RenderWait  # type: ignore
+from src.common.playwright_utils import BrowserSession, RenderWait, fetch_page, FetchOptions  # type: ignore
 from src.domain.models import Injury, InjuryStatus
 
 # Using shared HTTP utilities from common/http.py
@@ -165,31 +165,27 @@ def _pick_ua(args) -> str:
 def _render_or_fetch(url: str, args) -> str:
     if getattr(args, "render", False):
         ua = _pick_ua(args)
-        wait_selectors = [
-            s.strip() for s in (args.render_wait_selector or "").split(",") if s.strip()
-        ]
-        wait_texts = [t.strip() for t in (args.render_wait_text or "").split(",") if t.strip()]
-        wait = RenderWait(
-            selectors=wait_selectors or None,
-            text_contains=wait_texts or None,
-            network_idle=args.render_wait_network_idle,
-        )
+        wait_selectors = [s.strip() for s in (args.render_wait_selector or "").split(",") if s.strip()] or None
+        wait_texts = [t.strip() for t in (args.render_wait_text or "").split(",") if t.strip()] or None
         if args.verbose:
-            print(
-                f"[render] {url} wait selectors={wait_selectors} text={wait_texts} network_idle={args.render_wait_network_idle}"
-            )
+            print(f"[render] {url} wait selectors={wait_selectors} text={wait_texts} network_idle={args.render_wait_network_idle}")
         try:
-            with BrowserSession(
+            # Use unified async fetch (convert to sync via event loop run)
+            import asyncio
+            html = asyncio.run(fetch_page(FetchOptions(
+                url=url,
                 headless=not args.render_headful,
                 user_agent=ua,
-                proxy=args.proxy,
-                default_timeout_s=args.render_timeout,
-            ) as bs:
-                return bs.render_page(url, wait=wait, timeout_s=args.render_timeout)
+                wait_selectors=wait_selectors,
+                wait_text=wait_texts,
+                network_idle=args.render_wait_network_idle,
+                timeout_ms=int(args.render_timeout * 1000),
+                retries=args.retries,
+            )))
+            return html
         except Exception as e:
             if args.verbose:
                 print(f"[render->fallback] {e}")
-            # fall back to HTTP fetch
     # HTTP fallback/default
     return fetch_html(
         url,
