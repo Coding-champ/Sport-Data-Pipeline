@@ -1,0 +1,57 @@
+{
+  "clubs": [],
+  "squads": {},
+  "players": {
+    "direct": [
+      {
+        "first_name": "Luca",
+        "last_name": "Waldschmidt",
+        "birth_date": "1996-05-19",
+        "nationality": "Germany",
+        "height_cm": 181,
+        "weight_kg": 74,
+        "photo_url": "https://assets.bundesliga.com/player/dfl-obj-00021q-dfl-clu-000008-dfl-sea-0001k9.png",
+        "position": "Forward",
+        "shirt_number": 7,
+        "current_season_stats": {
+          "appearances": 3,
+          "goals": 1,
+          "assists": 1,
+          "penalties_taken": 0,
+          "penalties_scored": 0,
+          "woodwork": 0,
+          "shots_on_target": 2,
+          "crosses": 1,
+          "fouls_committed": 0,
+          "yellow_cards": 0,
+          "duels_won": 8,
+          "aerial_duels_won": 0,
+          "possession_phases": 46,
+          "sprints": 21,
+          "intensive_runs": 121,
+          "distance_km": 17.7,
+          "top_speed_kmh": 30.47,
+          "clean_sheets": null,
+          "saves": null,
+          "source_url": null
+        },
+        "career_stats": [],
+        "source_url": "https://www.bundesliga.com/de/bundesliga/spieler/luca-waldschmidt",
+        "scraped_at": "2025-09-21 16:37:22.695381+00:00",
+        "external_ids": {
+          "bundesliga_url": "https://www.bundesliga.com/de/bundesliga/spieler/luca-waldschmidt"
+        }
+      }
+    ]
+  },
+  "scraping_stats": {
+    "total_clubs": 0,
+    "total_players": 1,
+    "start_time": "2025-09-21T18:37:22.259835",
+    "clubs_only": false,
+    "direct_player": true,
+    "end_time": "2025-09-21T18:37:22.707347",
+    "duration_seconds": 0.447512,
+    "duration_formatted": "0:00:00.447512"
+  }
+}

@@ -1,0 +1,84 @@
+# Active external term mappings for dynamic position normalization
+
+positions:
+  GK:
+    canonical_long: Goalkeeper
+    synonyms: [Torwart, Torhüter, Torhueter, Torhuter, Keeper, Goalkeeper, TW, GK, Goalie]
+  DF:
+    canonical_long: Defender
+    synonyms: [Verteidiger, Abwehr, Innenverteidiger, Aussenverteidiger, Außenverteidiger, Fullback, Full-Back, Center Back, Centre Back, CB, IV, RV, LV, RB, LB, Wingback, Wing Back, WB]
+  MF:
+    canonical_long: Midfielder
+    synonyms: [Mittelfeld, Mittelfeldspieler, DM, OM, ZM, AM, CM, LM, RM, Sechser, Achter, Zehner, Winger, Fluegel, Flügel]
+  FW:
+    canonical_long: Forward
+    synonyms: [Stürmer, Stuermer, Angriff, Angreifer, Striker, MS, ST, SS, CF, False Nine, Falsche Neun]
+
+nationalities:
+  Germany:
+    canonical_long: Germany
+    synonyms: [de, ger, deutschland]
+  England:
+    canonical_long: England
+    synonyms: [en, eng, england, gb, uk, great britain]
+  France:
+    canonical_long: France
+    synonyms: [fr, fra, frankreich]
+  Spain:
+    canonical_long: Spain
+    synonyms: [es, esp, spanien]
+  Italy:
+    canonical_long: Italy
+    synonyms: [it, ita, italien]
+  Portugal:
+    canonical_long: Portugal
+    synonyms: [pt, por]
+  Brazil:
+    canonical_long: Brazil
+    synonyms: [br, bra, brasil]
+  United States:
+    canonical_long: United States
+    synonyms: [us, usa, united states]
+  Netherlands:
+    canonical_long: Netherlands
+    synonyms: [nl, ned, holland]
+  Austria:
+    canonical_long: Austria
+    synonyms: [at, aut]
+  Switzerland:
+    canonical_long: Switzerland
+    synonyms: [ch, sui, schweiz]
+
+footedness:
+  L:
+    canonical_long: Left
+    synonyms: [left, links, gauche, sinistra, izquierda, linksfuss, linker fuss]
+  R:
+    canonical_long: Right
+    synonyms: [right, rechts, droite, destra, derecha, rechtsfuss, rechter fuss]
+  B:
+    canonical_long: Both
+    synonyms: [both, beidfüssig, beidfuessig, beidbeinig, both feet, ambidextrous]
+
+indicators:
+  squad_page: [squad, kader, team, mannschaft, spieler, players]
+  player_link_context: [position, pos, torwart, torhüter, verteidiger, mittelfeld, stürmer, goalkeeper, defender, midfielder, forward]
+
+player_stats_labels:
+  appearances: [Appearances, Games, Matches, Spiele, Einsätze]
+  goals: [Goals, Tore]
+  assists: [Assists, Vorlagen]
+  minutes_played: [Minutes, Minuten]
+  yellow_cards: [Yellow Cards, Gelbe Karten, YC]
+  red_cards: [Red Cards, Rote Karten, RC]
+
+field_labels:
+  position: [Position, Pos.]
+  number: [Number, Nummer, Nr., '#']
+  birth_date: [Born, Birth, Geboren, Date of Birth]
+  birth_place: [Birthplace, Geburtsort, Place of Birth]
+  nationality: [Nationality, Nationalität, Country]
+  height_cm: [Height, Größe, Grösse, Size]
+  weight_kg: [Weight, Gewicht]
+  foot: [Foot, Fuß, Preferred Foot]
+  market_value: [Market Value, Marktwert, Value]

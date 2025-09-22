@@ -1,0 +1,58 @@
+{
+  "clubs": [],
+  "squads": {},
+  "players": {
+    "direct": [
+      {
+        "first_name": "Finn",
+        "last_name": "Dahmen",
+        "birth_date": "1998-03-27",
+        "nationality": "Germany",
+        "height_cm": 186,
+        "weight_kg": 80,
+        "photo_url": "https://assets.bundesliga.com/player/dfl-obj-0028co-dfl-clu-000010-dfl-sea-0001k9.png",
+        "position": "Goalkeeper",
+        "shirt_number": 1,
+        "current_season_stats": {
+          "appearances": 4,
+          "goals": 0,
+          "assists": 0,
+          "penalties_taken": 0,
+          "penalties_scored": null,
+          "woodwork": null,
+          "shots_on_target": null,
+          "saves": 17,
+          "own_goals": 0,
+          "crosses": null,
+          "fouls_committed": 0,
+          "yellow_cards": 0,
+          "duels_won": null,
+          "aerial_duels_won": null,
+          "possession_phases": 199,
+          "sprints": 2,
+          "intensive_runs": 23,
+          "distance_km": 25.9,
+          "top_speed_kmh": 28.27,
+          "clean_sheets": null,
+          "source_url": null
+        },
+        "career_stats": [],
+        "source_url": "https://www.bundesliga.com/de/bundesliga/spieler/finn-dahmen",
+        "scraped_at": "2025-09-21 16:46:44.702624+00:00",
+        "external_ids": {
+          "bundesliga_url": "https://www.bundesliga.com/de/bundesliga/spieler/finn-dahmen"
+        }
+      }
+    ]
+  },
+  "scraping_stats": {
+    "total_clubs": 0,
+    "total_players": 1,
+    "start_time": "2025-09-21T18:46:44.331387",
+    "clubs_only": false,
+    "direct_player": true,
+    "end_time": "2025-09-21T18:46:44.718335",
+    "duration_seconds": 0.386948,
+    "duration_formatted": "0:00:00.386948"
+  }
+}
