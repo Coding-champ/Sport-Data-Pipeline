@@ -42,21 +42,10 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from src.core.config import Settings  # type: ignore  # noqa: E402
-from src.data_collection.scrapers.courtside_scraper import (  # type: ignore  # noqa: E402
-    CourtsideScraper,
-)
+from src.data_collection.scrapers.courtside_scraper import CourtsideScraper  # type: ignore  # noqa: E402
+from src.common.logging_utils import configure_logging, get_logger  # type: ignore  # noqa: E402
 
-# --- Logging --------------------------------------------------------------------
-LOG_FILE = "courtside_scraper_diagnose.log"
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-    ],
-)
-logger = logging.getLogger("courtside.diagnose")
+logger = get_logger("courtside.diagnose")
 
 
 # --- Core diagnostic routine ----------------------------------------------------
@@ -179,6 +168,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main():  # pragma: no cover - CLI entry
     args = parse_args()
+    if args.debug:
+        os.environ.setdefault("LOG_LEVEL", "DEBUG")
+    configure_logging(service="diagnose")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:

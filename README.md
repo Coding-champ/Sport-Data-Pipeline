@@ -85,3 +85,45 @@ python scripts/run_scraper.py --source tm_injuries_csv --club-id 27 > injuries.c
 ```
 
 Entfernte Skripte: `run_bundesliga_club_scraper.py`, `scrape_bundesliga_clubs.py`, `run_flashscore_once.py`, `run_courtside_scrape_preview.py`, `preview_transfermarkt_injuries_min.py`.
+
+## Zentrales Logging
+
+Zentrale Utilities: `src/common/logging_utils.py`
+
+Environment Variablen:
+
+- `LOG_LEVEL` (Default: `INFO`) – z.B. `DEBUG`, `WARNING`.
+- `LOG_FORMAT` (`console` | `json`, Default: `console`).
+- `LOG_NO_COLOR=1` – deaktiviert Farben im Konsolenformat.
+- `LOG_TIMEZONE` (`local` | `utc`, Default: `local`).
+
+Verwendung:
+
+```python
+from src.common.logging_utils import configure_logging, get_logger
+
+configure_logging(service="scraper")  # idempotent
+logger = get_logger(__name__)
+logger.info("Starting job", extra={"job": "flashscore_batch"})
+```
+
+JSON Beispiel (`LOG_FORMAT=json`):
+
+```json
+{"ts": "2025-09-23T19:20:11.123456+02:00", "level": "INFO", "logger": "scripts.run_scraper", "message": "Starting scraper", "service": "scraper"}
+```
+
+Lokale Entwicklung (verbose):
+
+```bash
+export LOG_LEVEL=DEBUG
+python scripts/run_scraper.py --source bundesliga_overview --limit 2
+```
+
+Batch/Prod (strukturierte Logs):
+
+```bash
+LOG_FORMAT=json LOG_LEVEL=INFO python scripts/run_scraper.py --source flashscore_once > logs/flashscore.jsonl
+```
+
+Alle konsolidierten Skripte nutzen bereits dieses zentrale Logging.

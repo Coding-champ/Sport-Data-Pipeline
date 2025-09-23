@@ -28,6 +28,7 @@ import asyncio
 import csv
 import json
 import logging
+import os
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -43,6 +44,9 @@ if str(ROOT) not in sys.path:
 from src.common.http import DEFAULT_UAS, fetch_html  # type: ignore
 from src.common.parsing import extract_tm_player_id_from_href  # type: ignore
 from src.data_collection.scrapers.transfermarkt_injuries_scraper import _parse_injuries  # type: ignore
+from src.common.logging_utils import configure_logging, get_logger  # NEW
+
+logger = get_logger("scripts.run_scraper")
 
 
 def _tm_injuries_url(club_id: int) -> str:
@@ -142,8 +146,10 @@ async def run_bundesliga_deep(limit_clubs: int | None, limit_players: int | None
     scraper = BundesligaClubScraper(_MockDB())
     await scraper.initialize()
     clubs = await scraper.scrape_clubs()
+    logger.info("Fetched %d clubs (pre-limit)", len(clubs))
     if limit_clubs:
         clubs = clubs[:limit_clubs]
+        logger.debug("Applied club limit -> %d", len(clubs))
     results: dict[str, Any] = {"clubs": [c.model_dump() for c in clubs], "players": {}, "squads": {}}
     if limit_players is not None and limit_players <= 0:
         return results
@@ -166,6 +172,7 @@ async def run_bundesliga_overview(limit: int | None) -> dict[str, Any]:
     clubs = await scraper.scrape_clubs()
     if limit:
         clubs = clubs[:limit]
+    logger.info("Bundesliga overview returning %d clubs", len(clubs))
     return {"count": len(clubs), "clubs": [c.model_dump() for c in clubs]}
 
 
@@ -205,22 +212,19 @@ def maybe_write_json(result: Any, out: str | None):
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
 
-def configure_logging(verbose: bool):
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
-    )
-
-
 def main(argv: list[str] | None = None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    configure_logging(args.verbose)
+    # Initialize central logging (service name helps in JSON logs)
+    if args.verbose:
+        os.environ.setdefault("LOG_LEVEL", "DEBUG")  # ensure verbose effect
+    configure_logging(service="scraper")
+    logger.info("Starting scraper with source=%s", args.source)
     result = asyncio.run(dispatch(args))
     if args.out and not (args.source.endswith("_csv")):
         maybe_write_json(result, args.out)
+        logger.info("Wrote output to %s", args.out)
     if result is not None and not args.out:
-        # Print summary to stdout
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
