@@ -40,3 +40,8 @@ Thumbs.db
 
 
 .ruff_cache
+
+
+
+dist/
+build/
