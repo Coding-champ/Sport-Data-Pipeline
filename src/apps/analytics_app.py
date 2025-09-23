@@ -17,6 +17,42 @@ from ..database.manager import DatabaseManager
 from ..monitoring import HealthChecker, PrometheusMetrics, SystemMonitor
 
 
+def _timed(operation: str, log_success: Optional[str] = None, log_error: Optional[str] = None):
+    """Decorator factory for timing + metrics around async operations.
+
+    Defined at module level so it can be applied to methods without requiring
+    an already constructed instance (previous implementation as instance
+    method caused a TypeError during decoration time).
+    """
+    def wrapper(fn: F) -> F:
+        async def inner(self: 'SportsAnalyticsApp', *args, **kwargs):  # type: ignore[override]
+            start_time = datetime.now()
+            try:
+                result = await fn(self, *args, **kwargs)
+                duration = (datetime.now() - start_time).total_seconds()
+                if self.settings.enable_metrics:
+                    self.metrics.record_analytics_operation(operation, "success", duration)
+                if log_success:
+                    try:
+                        self.logger.info(log_success.format(duration=duration, args=args, kwargs=kwargs))
+                    except Exception:
+                        self.logger.info(f"{operation} completed in {duration:.2f}s")
+                return result
+            except Exception as e:  # noqa: BLE001
+                if self.settings.enable_metrics:
+                    self.metrics.record_analytics_operation(operation, "error", 0)
+                if log_error:
+                    try:
+                        self.logger.error(log_error.format(error=e, args=args, kwargs=kwargs))
+                    except Exception:
+                        self.logger.error(f"{operation} failed: {e}")
+                else:
+                    self.logger.error(f"{operation} failed: {e}")
+                return {"error": str(e)}
+        return cast(F, inner)
+    return wrapper
+
+
 class SportsAnalyticsApp:
     """Hauptanwendung für Sport Analytics"""
 
@@ -54,56 +90,6 @@ class SportsAnalyticsApp:
         except Exception as e:
             self.logger.error(f"Failed to initialize Analytics App: {e}")
             raise
-
-    # ------------------------- Internal helpers -------------------------
-    def _timed(
-        self,
-    operation: str,
-    log_success: Optional[str] = None,
-    log_error: Optional[str] = None,
-    ) -> Callable[[F], F]:
-        """Decorator factory for timing + metrics around async operations.
-
-        Parameters
-        ----------
-        operation: str
-            Metric / operation key (e.g. "player_analysis").
-        log_success: str | None
-            Optional format string for success log. Can contain placeholders consumed via .format(**locals()).
-        log_error: str | None
-            Optional format string for error log.
-        """
-
-        def wrapper(fn: F) -> F:
-            async def inner(*args, **kwargs):  # type: ignore[override]
-                start_time = datetime.now()
-                try:
-                    result = await fn(*args, **kwargs)
-                    duration = (datetime.now() - start_time).total_seconds()
-                    if self.settings.enable_metrics:
-                        self.metrics.record_analytics_operation(operation, "success", duration)
-                    if log_success:
-                        # Provide common locals
-                        try:
-                            self.logger.info(log_success.format(duration=duration, args=args, kwargs=kwargs))
-                        except Exception:
-                            self.logger.info(f"{operation} completed in {duration:.2f}s")
-                    return result
-                except Exception as e:  # noqa: BLE001
-                    if self.settings.enable_metrics:
-                        self.metrics.record_analytics_operation(operation, "error", 0)
-                    if log_error:
-                        try:
-                            self.logger.error(log_error.format(error=e, args=args, kwargs=kwargs))
-                        except Exception:
-                            self.logger.error(f"{operation} failed: {e}")
-                    else:
-                        self.logger.error(f"{operation} failed: {e}")
-                    return {"error": str(e)}
-
-            return cast(F, inner)
-
-        return wrapper
 
     async def analyze_player_performance(self, player_id: int, season: Optional[str] = None) -> dict[str, Any]:  # type: ignore[override]
         """Analyze single player performance (simplified, not using timing decorator for Py3.9 compat)."""

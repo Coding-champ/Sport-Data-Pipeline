@@ -120,6 +120,37 @@ class TermMapper:
     def __contains__(self, value: str) -> bool:  # pragma: no cover - small convenience
         return self.lookup(value) is not None
 
+    # ---------------------------- Legacy default static mapper ----------------------------
+    _DEFAULT_POSITION_INSTANCE: Optional["TermMapper"] = None  # type: ignore
+
+    @classmethod
+    def default_position_mapper(cls) -> "TermMapper":
+        """Return legacy static position mapper used by historical tests.
+
+        Provides a broad-band mapping of common German/English/abbreviated football
+        position terms to canonical short codes (GK, DF, MF, FW). This serves as a
+        fallback for unit tests and environments where the dynamic external
+        configuration file is absent.
+        """
+        if cls._DEFAULT_POSITION_INSTANCE is None:
+            groups = {
+                "GK": ["Torwart", "Torhueter", "Torhüter", "Keeper", "Goalkeeper", "TW", "gk"],
+                "DF": [
+                    "Defender", "Verteidiger", "Abwehr", "CB", "IV", "LV", "RV",
+                    "Full-Back", "Full Back", "Wing Back", "WB", "FB"
+                ],
+                "MF": [
+                    "Mittelfeld", "Midfielder", "DM", "OM", "ZM", "AM", "CM",
+                    "LM", "RM", "Zentrales Mittelfeld", "Mittelfeldspieler"
+                ],
+                "FW": [
+                    "Stürmer", "Stuermer", "Angriff", "Angreifer", "Striker", "FW",
+                    "MS", "ST", "CF", "Forward"
+                ],
+            }
+            cls._DEFAULT_POSITION_INSTANCE = cls.from_groups(groups, label="positions(static)")
+        return cls._DEFAULT_POSITION_INSTANCE
+
 def normalize_text(value: str) -> str:
     """Public wrapper used by other modules for consistent normalisation.
 
@@ -307,7 +338,24 @@ def get_dynamic_mappings() -> DynamicMappings:
 
 
 def map_position(value: Optional[str], *, return_long: bool = False) -> Optional[str]:
-    return get_dynamic_mappings().map_position(value, return_long=return_long)
+    """Map a raw position string to canonical code or long form.
+
+    Tries dynamic external mappings first; if the configuration file is not
+    available falls back to the legacy static default mapper.
+    """
+    try:
+        return get_dynamic_mappings().map_position(value, return_long=return_long)
+    except FileNotFoundError:
+        if not value:
+            return None
+        mapper = TermMapper.default_position_mapper()
+        code = mapper.lookup(value)
+        if not code:
+            return None
+        if return_long:
+            LONGS = {"GK": "Goalkeeper", "DF": "Defender", "MF": "Midfielder", "FW": "Forward"}
+            return LONGS.get(code, code)
+        return code
 
 def map_nationality(value: Optional[str], *, return_long: bool = True) -> Optional[str]:
     return get_dynamic_mappings().map_nationality(value, return_long=return_long)
@@ -316,8 +364,21 @@ def map_footedness(value: Optional[str]) -> Optional[str]:
     return get_dynamic_mappings().map_footedness(value)
 
 
+class DynamicPositionMapper(DynamicMappings):
+    """Backward compatible façade expected by older tests.
+
+    The legacy implementation exposed a `DynamicPositionMapper` focused solely
+    on positional terms. The refactor generalised this to `DynamicMappings`
+    with multiple categories. For compatibility we subclass without modifying
+    behaviour so tests importing the old name continue to work.
+    """
+
+    # Direct pass-through; kept for semantic clarity.
+    pass
+
 __all__.extend([
     'DynamicMappings',
+    'DynamicPositionMapper',
     'get_dynamic_mappings',
     'map_position',
     'map_nationality',

@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.common.playwright_utils import fetch_page, FetchOptions, PlaywrightFetchError
+from src.common.scraper_utils import parse_score_text, classify_match_status
 
 from src.core.config import Settings
 from src.data_collection.scrapers.base import BaseScraper, ScrapingConfig
@@ -159,52 +160,25 @@ class FlashscoreScraper(BaseScraper):
             if not all([home_team_el, away_team_el]):
                 return None
 
-            # Status bestimmen
-            status = "scheduled"
+            # Status bestimmen (zentralisierte Heuristik)
             text_time = time_elem.text.strip() if time_elem else ""
-            # Direkter Live-Hinweis über Klassen
-            classes = match_element.get("class", [])
-            is_live_class = (
-                any("event__match--live" in c for c in classes)
-                if isinstance(classes, list)
-                else False
-            )
-            # Zeit-/Status-Heuristiken
-            live_tokens = ["'", "HT", "1. HZ", "2. HZ", "ET", "PEN"]
-            is_live_time = any(tok in text_time for tok in live_tokens)
-            is_finished_time = any(tok in text_time for tok in ["FT", "AET"])  # End of match tokens
+            classes = match_element.get("class", []) if isinstance(match_element.get("class", []), list) else []
+            status = classify_match_status(text_time, classes)
 
-            if is_live_class or is_live_time:
-                status = "live"
-            else:
-                # Decide based on presence of score elements
-                has_any_score_el = (
-                    (score_home_el and (score_home_el.text or "").strip())
-                    or (score_away_el and (score_away_el.text or "").strip())
-                    or (score_combined_el and (score_combined_el.text or "").strip())
-                )
-                if has_any_score_el:
-                    status = "finished" if (is_finished_time or not is_live_time) else "live"
-
-            # Score parsen
-            def _to_int_safe(s: str) -> Optional[int]:
-                s = (s or "").strip()
-                if not s or s == "-" or s.lower() == "vs":
-                    return None
-                try:
-                    return int(s)
-                except Exception:
-                    return None
-
+            # Score parsen (zentral)
             home_score, away_score = None, None
-            if score_home_el or score_away_el:
-                home_score = _to_int_safe(score_home_el.text if score_home_el else None)
-                away_score = _to_int_safe(score_away_el.text if score_away_el else None)
-            elif score_combined_el and score_combined_el.text and " - " in score_combined_el.text:
-                parts = [p.strip() for p in score_combined_el.text.strip().split(" - ", 1)]
-                if len(parts) == 2:
-                    home_score = _to_int_safe(parts[0])
-                    away_score = _to_int_safe(parts[1])
+            if score_home_el and score_home_el.text:
+                hs, _ = parse_score_text(score_home_el.text)
+                home_score = hs
+            if score_away_el and score_away_el.text:
+                _, as_ = parse_score_text(score_away_el.text)
+                away_score = as_
+            if (home_score is None or away_score is None) and score_combined_el and score_combined_el.text:
+                hs2, as2 = parse_score_text(score_combined_el.text)
+                if home_score is None:
+                    home_score = hs2
+                if away_score is None:
+                    away_score = as2
 
             return {
                 "home_team": home_team_el.text.strip(),

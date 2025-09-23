@@ -67,7 +67,9 @@ class DummyBrowser:
 
 class DummyP:
     def __init__(self, page):
-        self.chromium = types.SimpleNamespace(launch=lambda headless=True: DummyBrowser(page))
+        async def launch(headless=True):  # noqa: ARG002
+            return DummyBrowser(page)
+        self.chromium = types.SimpleNamespace(launch=launch)
     def __enter__(self):
         return self
     def __exit__(self, exc_type, exc, tb):  # noqa: ARG002
@@ -76,7 +78,7 @@ class DummyP:
 @pytest.mark.asyncio
 async def test_fetch_page_with_hooks_success(monkeypatch):
     page = DummyPage()
-    async def fake_async_playwright():
+    def fake_async_playwright():
         class Ctx:
             async def __aenter__(self_inner):
                 return DummyP(page)
@@ -114,7 +116,7 @@ async def test_fetch_page_with_hooks_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_fetch_page_with_hooks_retry(monkeypatch):
     page = DummyPage(fail_first=True)
-    async def fake_async_playwright():
+    def fake_async_playwright():
         class Ctx:
             async def __aenter__(self_inner):
                 return DummyP(page)

@@ -23,6 +23,10 @@ from src.common.playwright_utils import (
     extract_from_ld_json,
     normalize_game_node,
 )
+from src.common.scraper_utils import (
+    is_incomplete_fixture,
+    unify_fixture_records,
+)
 
 from src.core.config import Settings
 from src.data_collection.scrapers.base import BaseScraper, ScrapingConfig
@@ -212,7 +216,7 @@ class CourtsideScraper(BaseScraper):
                             fixtures = enriched
                     await browser.close()
 
-            unified = self._unify_fixture_records(fixtures)
+            unified = unify_fixture_records(fixtures)
             self.logger.info(f"Unified {len(unified)} fixtures (hook pipeline)")
             fixtures_dto = [
                 Fixture(
@@ -388,53 +392,6 @@ class CourtsideScraper(BaseScraper):
         """Delegate to shared utils.normalize_game_node"""
         return normalize_game_node(node)
 
-    def _unify_fixture_records(self, items: list[dict]) -> list[dict]:
-        """Convert a list of mixed-shape records (DOM/Next.js/JSON) to unified fixture dicts.
-        Output keys: fixture_id, competition_id, competition_name, home_team_id, away_team_id,
-        home_team_name, away_team_name, score, url, timestamp.
-        """
-
-        def to_score(home_score, away_score):
-            try:
-                if home_score is None or away_score is None:
-                    return None
-                return f"{int(home_score)}-{int(away_score)}"
-            except Exception:
-                return None
-
-        unified: list[dict] = []
-        for it in items or []:
-            if not isinstance(it, dict):
-                continue
-            # Accept both DOM-shape and normalized-shape keys
-            fixture_id = it.get("fixture_id") or it.get("id") or it.get("url")
-            competition_id = it.get("competition_id")
-            competition_name = it.get("competition_name") or it.get("competition")
-            home_team_id = it.get("home_team_id") or it.get("home_id")
-            away_team_id = it.get("away_team_id") or it.get("away_id")
-            home_team_name = it.get("home_team_name") or it.get("home")
-            away_team_name = it.get("away_team_name") or it.get("away")
-            score = it.get("score")
-            if not score:
-                score = to_score(it.get("home_score"), it.get("away_score"))
-            url = it.get("url") or None
-            timestamp = it.get("timestamp") or datetime.utcnow().isoformat()
-
-            unified.append(
-                {
-                    "fixture_id": fixture_id,
-                    "competition_id": competition_id,
-                    "competition_name": competition_name,
-                    "home_team_id": home_team_id,
-                    "away_team_id": away_team_id,
-                    "home_team_name": home_team_name,
-                    "away_team_name": away_team_name,
-                    "score": score,
-                    "url": url,
-                    "timestamp": timestamp,
-                }
-            )
-        return unified
 
     async def _extract_fixtures(self, page: Page) -> list[dict]:
         """Extract fixture data from the page with improved error handling and debugging"""

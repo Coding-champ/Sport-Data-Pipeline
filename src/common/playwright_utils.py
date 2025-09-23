@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
-from typing import Any, Dict, List, Optional
-
-from playwright.async_api import Page, async_playwright
-
-# Shared async Playwright helpers used by multiple scrapers
-
 import asyncio
 import random
+import contextlib
+from datetime import datetime
+from dataclasses import dataclass
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Sequence, Callable
+from typing import Any, Dict, List, Optional, AsyncIterator, Sequence, Callable
+
+from playwright.async_api import Page, async_playwright
 
 
 class PlaywrightFetchError(RuntimeError):
@@ -548,8 +546,7 @@ async def list_data_testids(page: Page, limit: int = 20) -> List[Dict[str, Any]]
         limit,
     )
 
-import contextlib
-from dataclasses import dataclass
+## (imports moved to top to ensure dataclass is defined before usage)
 
 try:
     from playwright.sync_api import TimeoutError as PWTimeoutError  # type: ignore
