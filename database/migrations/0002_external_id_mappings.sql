@@ -21,11 +21,11 @@ BEGIN
         'CREATE TABLE IF NOT EXISTS public.%I (
             source      TEXT NOT NULL,
             external_id TEXT NOT NULL,
-            %I          BIGINT NOT NULL REFERENCES public.%I(id) ON DELETE CASCADE,
+            %I          BIGINT NOT NULL REFERENCES public.%I(%I) ON DELETE CASCADE,
             created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT pk_%I PRIMARY KEY (source, external_id)
         );',
-        mapping_table, entity_col, base_table, mapping_table
+        mapping_table, entity_col, base_table, entity_col, mapping_table
     );
 
     -- unique (source, entity_id)
@@ -56,19 +56,20 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create mapping tables for agreed entities
-SELECT create_mapping_if_base_exists('players', 'player_external_ids', 'player_id');
-SELECT create_mapping_if_base_exists('teams', 'team_external_ids', 'team_id');
-SELECT create_mapping_if_base_exists('clubs', 'club_external_ids', 'club_id');
-SELECT create_mapping_if_base_exists('matches', 'match_external_ids', 'match_id');
-SELECT create_mapping_if_base_exists('venues', 'venue_external_ids', 'venue_id');
-SELECT create_mapping_if_base_exists('stadiums', 'stadium_external_ids', 'stadium_id');
-SELECT create_mapping_if_base_exists('leagues', 'league_external_ids', 'league_id');
-SELECT create_mapping_if_base_exists('competitions', 'competition_external_ids', 'competition_id');
-SELECT create_mapping_if_base_exists('tournaments', 'tournament_external_ids', 'tournament_id');
-SELECT create_mapping_if_base_exists('referees', 'referee_external_ids', 'referee_id');
-SELECT create_mapping_if_base_exists('coaches', 'coach_external_ids', 'coach_id');
-SELECT create_mapping_if_base_exists('countries', 'country_external_ids', 'country_id');
-SELECT create_mapping_if_base_exists('cities', 'city_external_ids', 'city_id');
+SELECT create_mapping_if_base_exists('player', 'player_external_ids', 'player_id');
+SELECT create_mapping_if_base_exists('team', 'team_external_ids', 'team_id');
+SELECT create_mapping_if_base_exists('club', 'club_external_ids', 'club_id');
+SELECT create_mapping_if_base_exists('match', 'match_external_ids', 'match_id');
+SELECT create_mapping_if_base_exists('venue', 'venue_external_ids', 'venue_id');
+-- Stadiums table may not exist; skip if missing
+SELECT create_mapping_if_base_exists('stadium', 'stadium_external_ids', 'stadium_id');
+-- Leagues may be modeled as competitions; create competition mapping
+SELECT create_mapping_if_base_exists('competition', 'competition_external_ids', 'competition_id');
+SELECT create_mapping_if_base_exists('tournament', 'tournament_external_ids', 'tournament_id');
+SELECT create_mapping_if_base_exists('referee', 'referee_external_ids', 'referee_id');
+SELECT create_mapping_if_base_exists('coach', 'coach_external_ids', 'coach_id');
+SELECT create_mapping_if_base_exists('country', 'country_external_ids', 'country_id');
+SELECT create_mapping_if_base_exists('city', 'city_external_ids', 'city_id');
 
 -- Cleanup helper (optional): keep function for future migrations
 -- DROP FUNCTION IF EXISTS create_mapping_if_base_exists(TEXT, TEXT, TEXT);
