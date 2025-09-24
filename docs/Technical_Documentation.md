@@ -3,10 +3,12 @@
 ## 🏗️ Softwarearchitektur und Modulstruktur
 
 ### Überblick
+
 Die Sport Data Pipeline ist eine Plattform für die Sammlung, Analyse und Bereitstellung von Sportdaten. Das System folgt einer modularen Architektur mit klarer Trennung der Verantwortlichkeiten.
 
 ### Architektur-Diagramm
-```
+
+```text
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Web Clients   │    │   Mobile Apps   │    │  External APIs  │
 └─────────┬───────┘    └─────────┬───────┘    └─────────┬───────┘
@@ -19,14 +21,7 @@ Die Sport Data Pipeline ist eine Plattform für die Sammlung, Analyse und Bereit
                     └────────────┬────────────┘
                                  │
           ┌──────────────────────┼──────────────────────┐
-          │                      │                      │
-    ┌─────▼─────┐        ┌──────▼──────┐        ┌─────▼─────┐
-    │Analytics  │        │Data Collection│       │Background │
-    │  Engine   │        │ Orchestrator │       │   Tasks   │
-    └─────┬─────┘        └──────┬──────┘        └─────┬─────┘
-          │                     │                     │
           └─────────────────────┼─────────────────────┘
-                                │
                     ┌────────────▼────────────┐
                     │   Database Manager      │
                     │   (PostgreSQL + Redis)  │
@@ -35,7 +30,7 @@ Die Sport Data Pipeline ist eine Plattform für die Sammlung, Analyse und Bereit
 
 ### Modulstruktur
 
-```
+```text
 src/                   # Haupt-Package
 ├── api/                          # FastAPI Anwendungsschicht
 │   ├── main.py                   # FastAPI App Configuration
@@ -58,18 +53,6 @@ src/                   # Haupt-Package
 │   │   ├── football_data_api_collector.py  # Football-data.org
 │   │   └── betfair_odds_collector.py       # Betfair Exchange
 │   └── scrapers/                # Web-Scraping Module
-│       ├── base.py              # Abstract Base Scraper
-│       ├── scraping_orchestrator.py       # Scraper Koordination
-│       ├── transfermarkt_scraper.py       # Transfermarkt
-│       ├── fbref_scraper.py               # FBref Stats
-│       ├── flashscore_scraper.py          # Flashscore Live
-│       ├── bet365_scraper.py              # Bet365 Odds
-│       ├── courtside_scraper.py           # Courtside Basketball
-│       └── [weitere Scraper...]
-├── analytics/                    # Machine Learning & Analytics
-│   ├── engine.py                # Analytics Engine
-│   ├── models/                  # ML-Modelle
-│   │   ├── player_performance.py
 │   │   ├── match_prediction.py
 │   │   └── market_analysis.py
 │   └── reports/                 # Report Generation
@@ -83,25 +66,21 @@ src/                   # Haupt-Package
 │       ├── players.py           # Spieler-Services
 │       ├── matches.py           # Spiel-Services
 │       ├── teams.py             # Team-Services
-│       └── odds.py              # Wett-Services
 ├── domain/                      # Domain Models
 │   ├── entities/                # Business Entities
 │   └── value_objects/           # Value Objects
 ├── common/                      # Gemeinsame Utilities
 │   ├── http.py                  # HTTP Client mit Anti-Detection
 │   ├── logging.py               # Strukturiertes Logging
-│   └── exceptions.py            # Custom Exceptions
 └── monitoring/                  # Monitoring & Metriken
     ├── metrics.py               # Prometheus Metriken
     └── health.py                # Health Checks
-```
-
-## 🔧 Konfiguration und Umgebungsvariablen
-
 ### Zentrale Konfiguration
+
 Alle Einstellungen werden über `src/core/config.py` mit Pydantic Settings verwaltet und können über Umgebungsvariablen überschrieben werden.
 
 ### Wichtige Konfigurationsbereiche
+
 - **Database**: PostgreSQL-Verbindung, Pool-Größe
 - **Redis**: Caching und Message Broker
 - **API**: Host, Port, CORS, Authentifizierung
@@ -111,9 +90,109 @@ Alle Einstellungen werden über `src/core/config.py` mit Pydantic Settings verwa
 
 ---
 
-## 🖥️ CLI und Verwaltung
+## 🔗 Externe ID-Mappings (Quelle → interne IDs)
+
+Ziel: Externe Anbieter-IDs (z. B. FBref, Transfermarkt, Flashscore) stabil den internen Entitäten zuordnen. Dadurch werden Idempotenz beim Import, Deduplizierung und quellübergreifendes Linking gewährleistet.
+
+### Schema-Pattern
+
+- Für jede Entität mit externen IDs gibt es eine Mapping-Tabelle mit folgendem Muster:
+    - Primärschlüssel: `(source, external_id)` (Composite)
+    - Fremdschlüssel: `<entity_id_col>` → Basistabelle, `ON DELETE CASCADE`
+    - Eindeutigkeit: `UNIQUE (source, <entity_id_col>)` verhindert doppelte Mappings derselben Quelle auf verschiedene externe IDs
+
+```sql
+CREATE TABLE <entity>_external_ids (
+    PRIMARY KEY (source, external_id),
+    UNIQUE (source, <entity_id>)
+);
+CREATE INDEX ix_<entity>_external_ids_source ON <entity>_external_ids(source);
+```
+
+### Angelegte Mapping-Tabellen (Migration 0002)
+
+Die SQL-Migration `database/migrations/0002_external_id_mappings.sql` legt die Tabellen nur an, wenn die jeweilige Basistabelle existiert (`to_regclass`-Check):
+
+- `player_external_ids (player_id → player.player_id)`
+- `team_external_ids (team_id → team.team_id)`
+- `club_external_ids (club_id → club.club_id)`
+- `match_external_ids (match_id → match.match_id)`
+- `venue_external_ids (venue_id → venue.venue_id)`
+- `stadium_external_ids (stadium_id → stadium.stadium_id)` (optional, falls vorhanden)
+- `competition_external_ids (competition_id → competition.competition_id)`
+- `tournament_external_ids (tournament_id → tournament.tournament_id)` (optional)
+- `referee_external_ids (referee_id → referee.referee_id)`
+- `coach_external_ids (coach_id → coach.coach_id)`
+- `country_external_ids (country_id → country.country_id)`
+- `city_external_ids (city_id → city.city_id)`
+
+Die Migration nutzt eine Helper-Funktion `create_mapping_if_base_exists(base_table, mapping_table, entity_col)`, um Wiederholbarkeit und robuste Checks sicherzustellen.
+
+Ausführung (PowerShell):
+
+```powershell
+psql "postgresql://user:pass@localhost:5432/yourdb" -f "database\migrations\0002_external_id_mappings.sql"
+```
+
+### Async Mapping Service (strict, idempotent)
+
+Implementiert unter `src/database/services/external_id_mapping_service_async.py` mit `asyncpg`:
+
+- Klasse: `ExternalIdMappingServiceAsync`
+    - `ensure(entity, source, external_id, internal_id)`
+        - Fügt neues Mapping ein (`ON CONFLICT (source, external_id) DO NOTHING`).
+        - Ist bereits ein Mapping vorhanden:
+            - identische `internal_id` → OK (idempotent)
+            - abweichende `internal_id` → `MappingConflictError` (Remapping wird nicht automatisch vorgenommen)
+    - `find(entity, source, external_id)` → liefert `internal_id` oder `None`
+- Bequeme Wrapper für gängige Entitäten, z. B. `ensure_player`, `find_team`, `ensure_club`, `ensure_match`, `ensure_competition`, …
+
+Vertrag/Fehlermodi:
+
+- Eingaben: `entity: str` (z. B. "player"), `source: str | Source`, `external_id: str`, `internal_id: int`
+- Rückgabe: `internal_id: int` (existierende oder neu angelegte Zuordnung)
+- Fehler: `MappingConflictError` falls (source, external_id) bereits auf eine andere `internal_id` zeigt
+- Nebenläufigkeit: Transaktionale Absicherung, zweiter Insert-Versuch bei seltenen Races
+
+Beispiel (vereinfacht):
+
+```python
+from src.database.manager import DatabaseManager
+from src.database.services.external_id_mapping_service_async import ExternalIdMappingServiceAsync, MappingConflictError
+from src.common.constants import Source
+
+db = DatabaseManager()
+svc = ExternalIdMappingServiceAsync()
+
+async def demo(conn):
+        try:
+                await svc.ensure_player(conn, source=Source.FBREF, external_id="p_42", player_id=123)
+        except MappingConflictError as e:
+                # Konflikt bewusst behandeln (loggen, manuell prüfen)
+                raise
+```
+
+Vollständiges, lauffähiges Beispiel: `scripts/demo_external_id_mapping.py` (erst die Migration ausführen).
+
+### Source-Konstanten und Normalisierung
+
+Zentrale Definition unter `src/common/constants.py`:
+
+- `Source` Enum: `fbref`, `sofascore`, `transfermarkt`, `bundesliga`, `bet365`, `flashscore`, `courtside1891`, `odds`
+- `normalize_source(value: str | Source) -> str` canonicalisiert und validiert Eingaben; gängige Aliasse (`tm`, `fs`, `fb`) werden aufgelöst
+- Der Mapping-Service akzeptiert `str | Source` und normalisiert vor dem DB-Zugriff → konsistente Speicherung/Abfragen
+
+### Betriebs- und Datenqualitätsregeln
+
+- Remapping-Policy: Automatisches Umhängen wird nicht durchgeführt (Konflikt wird gemeldet). Anpassungen erfolgen bewusst/manuell.
+- Idempotenz: Wiederholte `ensure(...)`-Aufrufe mit derselben Zuordnung sind No-Ops.
+- Integrität: `UNIQUE (source, <entity_id>)` verhindert widersprüchliche Mappings je Quelle.
+- Performance: PK `(source, external_id)` + Index auf `source` sichern schnelle Suchen/Upserts. Batch-APIs sind aktuell nicht erforderlich, können später ergänzt werden.
+
+## ��️ CLI und Verwaltung
 
 ### Modulare CLI-Schnittstelle
+
 Das System bietet eine einheitliche CLI für verschiedene Operationen:
 
 ```bash
@@ -131,6 +210,7 @@ python -m src.apps.cli scrapers
 ```
 
 ### Run-Modi Konfiguration
+
 Über die Umgebungsvariable `RUN_MODE` oder `Settings.run_mode`:
 
 - **`interactive`**: CLI-Menü im Prozess
@@ -140,6 +220,7 @@ python -m src.apps.cli scrapers
 - **`full_service`**: API und Background-Scheduler starten
 
 ### Operative Scripts
+
 ```bash
 # Database Diagnostics
 python -m scripts.db_diagnostics
@@ -157,6 +238,7 @@ python scripts/simple_debug.py
 ## 🛠️ Verwendete Software und Frameworks
 
 ### Backend-Framework
+
 | Framework | Version | Zweck |
 |-----------|---------|-------|
 | **FastAPI** | 0.104.1 | Moderne, schnelle Web-API mit automatischer OpenAPI-Dokumentation |
@@ -164,6 +246,7 @@ python scripts/simple_debug.py
 | **Pydantic** | 2.4.2 | Datenvalidierung und Settings-Management |
 
 ### Datenbank-Stack
+
 | Technologie | Version | Zweck |
 |-------------|---------|-------|
 | **PostgreSQL** | 15+ | Primäre relationale Datenbank mit JSONB-Support |
@@ -173,6 +256,7 @@ python scripts/simple_debug.py
 | **Redis** | 4.0.1+ | Caching und Message Broker |
 
 ### Web-Scraping-Stack
+
 | Tool | Version | Einsatzzweck |
 |------|---------|-------------|
 | **Selenium** | 4.15.2 | Browser-Automatisierung für JS-heavy Sites |
@@ -183,6 +267,7 @@ python scripts/simple_debug.py
 | **aiohttp** | 3.8.6 | Async HTTP-Client |
 
 ### Machine Learning & Analytics
+
 | Bibliothek | Version | Anwendung |
 |------------|---------|-----------|
 | **scikit-learn** | 1.3.2 | Machine Learning Algorithmen |
@@ -194,12 +279,14 @@ python scripts/simple_debug.py
 | **seaborn** | 0.13.0 | Statistische Visualisierung |
 
 ### Background Processing
+
 | Tool | Version | Funktion |
 |------|---------|----------|
 | **Celery** | 4.0.1+ | Async Task Queue |
 | **Redis** | 4.0.1+ | Message Broker für Celery |
 
 ### Monitoring & DevOps
+
 | Tool | Version | Zweck |
 |------|---------|-------|
 | **Prometheus** | Client 0.19.0 | Metriken-Sammlung |
@@ -207,6 +294,7 @@ python scripts/simple_debug.py
 | **psutil** | 5.9.6 | System-Monitoring |
 
 ### Development & Testing
+
 | Tool | Version | Einsatz |
 |------|---------|---------|
 | **pytest** | 7.4.3 | Testing Framework |
@@ -217,6 +305,7 @@ python scripts/simple_debug.py
 ## 🏟️ Verfügbare API-Services
 
 ### Authentifizierung
+
 - **API-Key basiert**: `X-API-Key` Header erforderlich (außer Development)
 - **Rate Limiting**: Konfigurierbare Anfragen pro Minute
 - **CORS**: Konfigurierbare Origins
@@ -224,6 +313,7 @@ python scripts/simple_debug.py
 ### Kern-Endpoints
 
 #### Spieler-Management (`/api/v1/players`)
+
 ```http
 GET    /api/v1/players                    # Liste aller Spieler
 GET    /api/v1/players/{id}               # Einzelner Spieler
@@ -234,6 +324,7 @@ POST   /api/v1/players/{id}/predict       # Performance-Vorhersage
 ```
 
 #### Team-Management (`/api/v1/teams`)
+
 ```http
 GET    /api/v1/teams                      # Liste aller Teams
 GET    /api/v1/teams/{id}                 # Team-Details
@@ -243,6 +334,7 @@ POST   /api/v1/teams/{id}/analyze         # Team-Analyse
 ```
 
 #### Spiel-Management (`/api/v1/matches`)
+
 ```http
 GET    /api/v1/matches                    # Spielliste (mit Filtern)
 GET    /api/v1/matches/{id}               # Spiel-Details
@@ -253,6 +345,7 @@ GET    /api/v1/matches/{id}/stats         # Spielstatistiken
 ```
 
 #### Wett-Daten (`/api/v1/odds`)
+
 ```http
 GET    /api/v1/odds/matches/{id}          # Quoten für Spiel
 GET    /api/v1/odds/compare               # Quoten-Vergleich
@@ -260,6 +353,7 @@ GET    /api/v1/odds/value                 # Value-Bets
 ```
 
 #### Analytics (`/api/v1/analytics`)
+
 ```http
 POST   /api/v1/analytics/player           # Spieler-Analyse
 POST   /api/v1/analytics/team             # Team-Analyse
@@ -269,6 +363,7 @@ GET    /api/v1/analytics/reports/{id}     # Report abrufen
 ```
 
 #### System-Endpoints (`/api/v1/system`)
+
 ```http
 GET    /health                           # System Health Check
 GET    /metrics                          # Prometheus Metriken
@@ -279,6 +374,7 @@ GET    /docs                            # OpenAPI Dokumentation
 ```
 
 ### Request/Response-Formate
+
 Alle Endpoints nutzen JSON für Request/Response mit Pydantic-Validierung:
 
 ```python
@@ -315,11 +411,13 @@ Alle Endpoints nutzen JSON für Request/Response mit Pydantic-Validierung:
 ## 📊 Datenmodell und Schema
 
 ### Datenbank-Architektur
+
 Das System nutzt PostgreSQL mit strategischem Einsatz von JSONB für flexible, sportspezifische Daten.
 
 #### Kern-Entitäten
 
 ##### Sports & Hierarchie
+
 ```sql
 sports                  -- Unterstützte Sportarten (Football, Basketball, American Football)
 ├── countries           -- Länder
@@ -330,6 +428,7 @@ sports                  -- Unterstützte Sportarten (Football, Basketball, Ameri
 ```
 
 ##### Spieler & Personal
+
 ```sql
 players                 -- Spieler-Stammdaten
 ├── player_contracts    -- Verträge
@@ -340,6 +439,7 @@ players                 -- Spieler-Stammdaten
 ```
 
 ##### Spiele & Events
+
 ```sql
 matches                -- Spiele
 ├── match_events       -- Spielereignisse (Tore, Karten, etc.)
@@ -349,6 +449,7 @@ matches                -- Spiele
 ```
 
 ##### Wett-System
+
 ```sql
 bookmakers            -- Wettanbieter
 ├── betting_markets   -- Wettmärkte (sportspezifisch)
@@ -359,6 +460,7 @@ bookmakers            -- Wettanbieter
 ### JSONB-Felder für Flexibilität
 
 #### Sportspezifische Statistiken
+
 ```sql
 -- In season_player_stats Tabelle
 football_stats JSONB    -- Fußball: goals, assists, passes, tackles...
@@ -380,6 +482,7 @@ american_football_stats JSONB -- Am. Football: yards, touchdowns, sacks...
 ```
 
 #### Match Events (sportspezifisch)
+
 ```sql
 event_data JSONB  -- Flexible Event-Daten pro Sportart
 
@@ -403,6 +506,7 @@ event_data JSONB  -- Flexible Event-Daten pro Sportart
 ```
 
 #### Team & Venue Metadata
+
 ```sql
 -- Teams
 metadata JSONB  -- Social Media, Sponsoren, Ausstattung
@@ -430,6 +534,7 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 | **ZeroZero** | Web Scraping | https://zerozero.pt | Portugiesische Liga-Daten | Football | ✅ Aktiv |
 
 ### Datensammlung-Frequenzen
+
 | Kategorie | Frequenz | Datenquellen |
 |-----------|----------|--------------|
 | **Live-Scores** | 30 Sekunden | Flashscore, SofaScore |
@@ -440,6 +545,7 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 | **Team-Daten** | Wöchentlich | Alle Quellen |
 
 ### Anti-Detection-Maßnahmen
+
 - **Undetected Chrome**: Für schwer zu scrapende Sites
 - **Header-Rotation**: Zufällige User-Agents und Headers
 - **Proxy-Rotation**: Bei Bedarf konfigurierbar
@@ -451,6 +557,7 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 ### ✅ Aktuell verfügbare Key Features
 
 #### Datensammlung & -verarbeitung
+
 - ✅ **Multi-Source Integration**: 12 aktive Datenquellen
 - ✅ **Anti-Detection Web Scraping**: Undetected Chrome, Header-Rotation
 - ✅ **API Integration**: Football-data.org, Betfair Exchange
@@ -459,12 +566,14 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 - ✅ **Fehlerbehandlung**: Retry-Logic mit exponential Backoff
 
 #### API & Integration
+
 - ✅ **RESTful API**: FastAPI mit OpenAPI-Dokumentation
 - ✅ **Authentifizierung**: API-Key basierte Sicherheit
 - ✅ **Rate Limiting**: Schutz vor Überlastung
 - ✅ **CORS Support**: Web-Client Integration
 
 #### Produktion & Monitoring
+
 - ✅ **Containerisierung**: Docker & Docker Compose
 - ✅ **Monitoring**: Prometheus Metriken
 - ✅ **Health Checks**: Umfassendes System-Monitoring
@@ -473,6 +582,7 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 ### 🔄 Aktuell in Entwicklung (nächste 3 Monate)
 
 #### Performance Optimierungen
+
 - 🔄 **Database Sharding**: Horizontale Skalierung
 - 🔄 **Caching Strategy**: Redis Cluster, CDN Integration
 - 🔄 **Query Optimization**: Index-Optimierung, Query-Tuning
@@ -481,39 +591,46 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 ### 📋 Geplante Features (6-12 Monate)
 
 #### Erweiterte ML-Modelle
+
 - 📋 **Neural Networks**: Deep Learning für präzisere Vorhersagen
 - 📋 **Ensemble Methods**: Kombination mehrerer Modelle
 - 📋 **Feature Engineering**: Erweiterte statistische Features
 - 📋 **Model Versioning**: MLflow Integration
 
 #### Real-time Streaming
+
 - 📋 **WebSocket API**: Echtzeit-Daten für Web-Clients
 - 📋 **Live Notifications**: Push-Benachrichtigungen
 
 #### Enhanced Visualisation
+
 - 📋 **Interactive Dashboards**: Erweiterte Plotly-Dashboards
 - 📋 **Mobile-Responsive UI**: Progressive Web App
 - 📋 **Custom Report Builder**: Report-Erstellung
 - 📋 **Data Export**: Erweiterte Export-Optionen (Excel, PowerBI)
 
 #### Zusätzliche Sportarten
+
 - 📋 **Hockey**: NHL/European Hockey Integration
 - 📋 **Baseball**: MLB Statistics Integration
 - 📋 **eSports**: Gaming Tournament Data
 
 #### Fantasy Sports Integration
+
 - 📋 **Fantasy API**: Draft Kings/FanDuel Integration
 - 📋 **Lineup Optimization**: ML-optimierte Team-Aufstellungen
 - 📋 **Player Projections**: Fantasy Points Predictions
 - 📋 **Contest Analysis**: ROI-Optimierung
 
 #### Advanced Betting Analytics
+
 - 📋 **Arbitrage Detection**: Surebet-Finder
 - 📋 **Value Bet Algorithm**: Mathematical Edge Detection
 - 📋 **Bankroll Management**: Portfolio-Optimierung
 - 📋 **Live Betting Signals**: Real-time Opportunity Alerts
 
 #### AI-Powered Insights
+
 - 📋 **Natural Language Generation**: Automated Match Reports
 - 📋 **Computer Vision**: Video Analysis Integration
 - 📋 **Sentiment Analysis**: Social Media Impact auf Quoten
@@ -521,21 +638,24 @@ technology_features JSONB  -- VAR, Torlinientechnik, etc.
 ### 💡 Zukünftige Innovationen (12+ Monate)
 
 #### Blockchain Integration
+
 - 💡 **Smart Contracts**: Automatisierte Wett-Abwicklung
 - 💡 **NFT Integration**: Digitale Sammelkarten/Momente
 - 💡 **Decentralized Data**: Blockchain-basierte Datenverifizierung
 
 #### Advanced AI
+
 - 💡 **Large Language Models**: ChatGPT-Integration für Queries
 
 #### Mobile & IoT
+
 - 💡 **Stadium IoT**: Direkte Venue-Datenintegration
 
 #### Enterprise Features
+
 - 💡 **White-Label Solutions**: Anpassbare Platform für Kunden
 - 💡 **B2B API Marketplace**: Daten-as-a-Service
 - 💡 **Regulatory Compliance**: GDPR, CCPA, Gaming-Regulierung
-
 
 *Diese technische Dokumentation wird kontinuierlich aktualisiert und erweitert.*
 
