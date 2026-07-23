@@ -1,0 +1,21 @@
+- Es müssen Trigger für Historisierung von Stadionnamen etc implementiert werden
+- Es müssen Trigger implementiert werden, die überprüfen, ob eine interne ID für eine Entität besteht und diese ggf. mit hilfe der Generator Klasse erstellen
+- Hierarchie für die Vertraunswürdigkeit von Daten (1: Bundesliga.de, https://www.premierleague.com; 2: fbref.com???; 3: ...)
+- Abgleichen, ob Daten bei zwei Quelle identisch sind
+- Data Quality und Data Lineage implementieren
+- Scraper Hierarchie erstellen
+- Scraper sollen einzeln funktionieren, wenn es die Hierarchie zulässt
+- Konsolidieren der Dataclasses in bundesliga_club_scraper.py in die zentrale dataclasses Datei
+
+
+Erstelle mir einen ausführlichen Bericht über mein Projekt. Wenn ich das Projekt zum jetztigen Stand mit allen Funktionalitäten, Services und Datenmodellen erneut bauen müsste, wie müsste ich da vorgehen? Was muss ich als erstes implementieren, damit alles reibungslos funktioniert? Beachte alle Abhängigkeiten zu anderen Dateien, Klassen, Funktionen und Entitäten in den Datenmodellen. Analysiere die gesamte Codebase in den Ordnern /config, /database und /src.
+
+
+python -u scripts/scrape_bundesliga_clubs.py
+
+python scripts/run_bundesliga_club_scraper.py --clubs-only -o reports/clubs.json
+
+python scripts/run_bundesliga_club_scraper.py --output .\\bundesliga_dump.json
+
+python scripts/run_bundesliga_club_scraper.py --max-clubs 1 --max-players 15 -v --output .\players_extended.json
+python scripts/run_bundesliga_club_scraper.py --player-url https://www.bundesliga.com/de/bundesliga/spieler/finn-dahmen -v --output .\finn-dahmen.json

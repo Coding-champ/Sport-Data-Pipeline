@@ -242,7 +242,6 @@ class BundesligaClubScraper(BaseScraper):
         self._captured_club_json: list[dict] = []
         self._captured_club_json_pairs: list[tuple[str, dict]] = []
 
-    # -------------------- Utility Normalizers --------------------
 
     # -------------------- Utility Normalizers --------------------
     def _normalize_website(self, url_val: Optional[str]) -> Optional[str]:
